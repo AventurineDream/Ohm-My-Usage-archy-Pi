@@ -1,1 +1,87 @@
-{"activation":"on-demand","author":"AventurineDream","barWidget":{"aliases":["omp-usage","omp","usage"],"allowMultiple":false,"category":"AI","defaultSection":"right","defaults":{"barWindow":"auto","provider":"anthropic","refreshIntervalSec":120,"showAs":"used","showProvider":false},"description":"Your OMP provider usage, live in the top bar, with a panel showing every provider's limits and reset times. Data comes from `omp usage --json`.","displayName":"OMP Usage","schema":[{"defaultValue":"anthropic","description":"Provider id from `omp usage --json` to show in the top bar (for example anthropic, openai-codex, devin). Leave blank to use the provider with the highest usage.","key":"provider","label":"Primary provider","type":"string"},{"defaultValue":120,"description":"`omp usage` fetches live data from your providers, so this stays gentle by default.","key":"refreshIntervalSec","label":"Refresh interval (seconds)","max":3600,"min":30,"step":30,"type":"integer"},{"defaultValue":"auto","description":"Which limit window the top bar shows for the primary provider. Auto keeps the highest percent used.","key":"barWindow","label":"Top bar usage window","options":["auto","5h","7d"],"type":"enum"},{"defaultValue":"used","description":"Whether the bar number reads what you have used or what is left of the same window.","key":"showAs","label":"Show usage as","options":["used","left"],"type":"enum"},{"defaultValue":false,"description":"Show the provider's short name before the usage value in the top bar.","key":"showProvider","label":"Show provider name","type":"boolean"}]},"description":"Live OMP (Oh My Pi) provider usage in the Omarchy bar. Reads `omp usage --json` — no separate binary, no per-vendor auth; OMP already handles all of that.","entryPoints":{"barWidget":"BarWidget.qml","service":"Service.qml"},"id":"aven.omp-usage","kinds":["bar-widget","service"],"license":"MIT","name":"OMP Usage","schemaVersion":1,"version":"0.1.0"}
+{
+ "activation": "on-demand",
+ "author": "AventurineDream",
+ "barWidget": {
+  "aliases": [
+   "omp-usage",
+   "omp",
+   "usage"
+  ],
+  "allowMultiple": false,
+  "category": "AI",
+  "defaultSection": "right",
+  "defaults": {
+   "barWindow": "auto",
+   "provider": "anthropic",
+   "refreshIntervalSec": 120,
+   "showAs": "used",
+   "showProvider": false
+  },
+  "description": "Your OMP provider usage, live in the top bar, with a panel showing every provider's limits and reset times. Data comes from `omp usage --json`.",
+  "displayName": "Ohm-My-Usage-archy-Pi",
+  "schema": [
+   {
+    "defaultValue": "anthropic",
+    "description": "Provider id from `omp usage --json` to show in the top bar (for example anthropic, openai-codex, devin). Leave blank to use the provider with the highest usage.",
+    "key": "provider",
+    "label": "Primary provider",
+    "type": "string"
+   },
+   {
+    "defaultValue": 120,
+    "description": "`omp usage` fetches live data from your providers, so this stays gentle by default.",
+    "key": "refreshIntervalSec",
+    "label": "Refresh interval (seconds)",
+    "max": 3600,
+    "min": 30,
+    "step": 30,
+    "type": "integer"
+   },
+   {
+    "defaultValue": "auto",
+    "description": "Which limit window the top bar shows for the primary provider. Auto keeps the highest percent used.",
+    "key": "barWindow",
+    "label": "Top bar usage window",
+    "options": [
+     "auto",
+     "5h",
+     "7d"
+    ],
+    "type": "enum"
+   },
+   {
+    "defaultValue": "used",
+    "description": "Whether the bar number reads what you have used or what is left of the same window.",
+    "key": "showAs",
+    "label": "Show usage as",
+    "options": [
+     "used",
+     "left"
+    ],
+    "type": "enum"
+   },
+   {
+    "defaultValue": false,
+    "description": "Show the provider's short name before the usage value in the top bar.",
+    "key": "showProvider",
+    "label": "Show provider name",
+    "type": "boolean"
+   }
+  ]
+ },
+ "description": "Ohm-My-Usage-archy-Pi \u2014 live OMP (Oh My Pi) provider usage in the Omarchy bar. Reads `omp usage --json` \u2014 no separate binary, no per-vendor auth; OMP already handles all of that.",
+ "entryPoints": {
+  "barWidget": "BarWidget.qml",
+  "service": "Service.qml"
+ },
+ "id": "aven.omp-usage",
+ "kinds": [
+  "bar-widget",
+  "service"
+ ],
+ "license": "MIT",
+ "name": "Ohm-My-Usage-archy-Pi",
+ "schemaVersion": 1,
+ "version": "0.1.0",
+ "homepage": "https://github.com/AventurineDream/Ohm-My-Usage-archy-Pi"
+}

@@ -1,4 +1,4 @@
-# OMP Usage
+# Ohm-My-Usage-archy-Pi
 
 Live OMP (Oh My Pi) provider usage in the Omarchy bar.
 
@@ -11,7 +11,7 @@ The usual usage bar (`ai-usagebar`) is a big multi-provider tool that needs its 
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/AventurineDream/omarchy-omp-usage.git --enable
+omarchy plugin add https://github.com/AventurineDream/Ohm-My-Usage-archy-Pi.git --enable
 ```
 
 Requires `omp` on your PATH (Oh My Pi). The widget polls `omp usage --json` on a timer; the interval is configurable.
