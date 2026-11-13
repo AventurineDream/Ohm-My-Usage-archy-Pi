@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Layouts
 import Quickshell
 import qs.Commons
 import qs.Ui
@@ -60,7 +61,7 @@ Panel {
           spacing: Style.space(16)
 
           // Header.
-          Row {
+          RowLayout {
             width: parent.width
             spacing: Style.space(10)
 
@@ -135,7 +136,7 @@ Panel {
                   width: parent.width
                   spacing: Style.space(4)
 
-                  Row {
+                  RowLayout {
                     width: parent.width
                     spacing: Style.space(8)
 
