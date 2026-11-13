@@ -43,8 +43,11 @@ BarWidget {
   }
 
   function syncService() {
-    if (root.usageService && typeof root.usageService.configure === "function")
-      root.usageService.configure(root.settings);
+    if (root.usageService) {
+      root.usageService.panelOpen = root.opened;
+      if (typeof root.usageService.configure === "function")
+        root.usageService.configure(root.settings);
+    }
     injectPanel();
   }
 
@@ -90,6 +93,10 @@ BarWidget {
   onBarChanged: Qt.callLater(syncService)
   onSettingsChanged: Qt.callLater(syncService)
   onUsageServiceChanged: Qt.callLater(syncService)
+  onOpenedChanged: {
+    if (root.usageService)
+      root.usageService.panelOpen = root.opened;
+  }
   Component.onCompleted: Qt.callLater(syncService)
 
   Loader {
