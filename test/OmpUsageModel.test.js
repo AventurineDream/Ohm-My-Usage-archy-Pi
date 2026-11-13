@@ -94,6 +94,24 @@ eq(M.limitTone({ usedPct: 95, status: "ok" }), "high", "tone: 95% -> high");
 eq(M.limitTone({ usedPct: 100, status: "ok" }), "critical", "tone: 100% -> critical");
 eq(M.limitTone(null), "ok", "tone: null -> ok");
 
+// pollIntervalMs — base 300s (5 min), panel open, no failures.
+// Closed panel halves the cadence; failures double it, capped at 30 min.
+eq(M.pollIntervalMs(300, true, 0, 1800000), 300000, "poll: open, 5 min base");
+eq(M.pollIntervalMs(300, false, 0, 1800000), 600000, "poll: closed panel -> 10 min");
+eq(M.pollIntervalMs(300, true, 1, 1800000), 600000, "poll: 1 failure doubles to 10 min");
+eq(M.pollIntervalMs(300, true, 2, 1800000), 1200000, "poll: 2 failures -> 20 min");
+eq(M.pollIntervalMs(300, true, 3, 1800000), 1800000, "poll: 3 failures caps at 30 min");
+eq(M.pollIntervalMs(300, true, 10, 1800000), 1800000, "poll: many failures stay capped at 30 min");
+eq(M.pollIntervalMs(300, false, 1, 1800000), 1200000, "poll: closed + 1 failure -> 20 min");
+eq(M.pollIntervalMs(120, true, 0, 1800000), 120000, "poll: custom base 120s respected");
+eq(M.pollIntervalMs(10, true, 0, 1800000), 30000, "poll: base floors at 30s");
+eq(M.pollIntervalMs(0, true, 0, 1800000), 30000, "poll: zero base floors at 30s");
+// Back-off never shortens the wait below the base, even when the base
+// itself exceeds the 30-min cap (long refresh interval, closed panel).
+eq(M.pollIntervalMs(1800, false, 1, 1800000), 3600000, "poll: base 60 min (closed) + failure stays 60 min, not capped to 30");
+eq(M.pollIntervalMs(3600, true, 1, 1800000), 3600000, "poll: base 60 min (open) + failure stays 60 min, not capped to 30");
+eq(M.pollIntervalMs(1800, true, 0, 1800000), 1800000, "poll: base 30 min open, no failure -> 30 min");
+
 // providerLabel / providerShort
 eq(M.providerLabel("anthropic"), "Anthropic", "label: anthropic");
 eq(M.providerLabel("google-antigravity"), "Antigravity", "label: antigravity");

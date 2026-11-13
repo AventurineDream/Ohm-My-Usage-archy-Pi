@@ -43,8 +43,11 @@ BarWidget {
   }
 
   function syncService() {
-    if (root.usageService && typeof root.usageService.configure === "function")
-      root.usageService.configure(root.settings);
+    if (root.usageService) {
+      root.usageService.panelOpen = root.opened;
+      if (typeof root.usageService.configure === "function")
+        root.usageService.configure(root.settings);
+    }
     injectPanel();
   }
 
@@ -90,6 +93,17 @@ BarWidget {
   onBarChanged: Qt.callLater(syncService)
   onSettingsChanged: Qt.callLater(syncService)
   onUsageServiceChanged: Qt.callLater(syncService)
+  onOpenedChanged: {
+    if (root.usageService) {
+      root.usageService.panelOpen = root.opened;
+      // Confirm `root.opened` is the real panel-open property: when the
+      // panel opens, the poll interval should drop to the base cadence
+      // (5 min at the default), and the Service should fetch at once
+      // when the data is stale.
+      if (root.opened)
+        console.log("omp-usage: panel opened, panelOpen=" + root.usageService.panelOpen + " pollIntervalMs=" + root.usageService.pollIntervalMs);
+    }
+  }
   Component.onCompleted: Qt.callLater(syncService)
 
   Loader {

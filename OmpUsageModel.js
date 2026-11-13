@@ -153,6 +153,27 @@ function formatResetIn(resetsAt, nowMs) {
     return m + "m";
 }
 
+// Poll interval in ms for the usage fetch, given the base interval in
+// seconds, whether the panel is open, and how many fetches have failed
+// in a row. The panel-open cadence is the base; a closed panel polls at
+// half that rate so the bar stays fresh without hammering providers
+// around the clock. Each consecutive failure doubles the interval
+// (exponential back-off), capped at maxBackoffMs; a success resets the
+// count to 0, which restores the base cadence. The interval never drops
+// below the base: when the base itself exceeds the cap (a long refresh
+// interval, or a closed panel doubling it), back-off must not shorten
+// the wait to the cap.
+function pollIntervalMs(baseSec, panelOpen, consecutiveFailures, maxBackoffMs) {
+    var base = Math.max(30, baseSec || 0) * 1000;
+    if (!panelOpen)
+        base *= 2;
+    if (consecutiveFailures > 0) {
+        var factor = Math.pow(2, consecutiveFailures);
+        base = Math.max(base, Math.min(maxBackoffMs, base * factor));
+    }
+    return base;
+}
+
 // Status tint for a limit: exhausted -> "critical", >= 90% -> "high",
 // otherwise "ok". The UI maps these to theme colors.
 function limitTone(limit) {
@@ -175,6 +196,7 @@ if (typeof module !== "undefined" && module.exports) {
         pickPrimaryProvider: pickPrimaryProvider,
         formatBarValue: formatBarValue,
         formatResetIn: formatResetIn,
-        limitTone: limitTone
+        limitTone: limitTone,
+        pollIntervalMs: pollIntervalMs
     };
 }

@@ -13,7 +13,7 @@
   "defaults": {
    "barWindow": "auto",
    "provider": "anthropic",
-   "refreshIntervalSec": 120,
+   "refreshIntervalSec": 300,
    "showAs": "used",
    "showProvider": false
   },
@@ -28,8 +28,8 @@
     "type": "string"
    },
    {
-    "defaultValue": 120,
-    "description": "`omp usage` fetches live data from your providers, so this stays gentle by default.",
+    "defaultValue": 300,
+    "description": "`omp usage` fetches live data from your providers, so this stays gentle by default. Polls every 5 min with the panel open (10 min closed); a failed check backs off exponentially and resets on success.",
     "key": "refreshIntervalSec",
     "label": "Refresh interval (seconds)",
     "max": 3600,
@@ -82,6 +82,6 @@
  "license": "MIT",
  "name": "Ohm-My-Usage-archy-Pi",
  "schemaVersion": 1,
- "version": "0.1.0",
+ "version": "0.2.0",
  "homepage": "https://github.com/AventurineDream/Ohm-My-Usage-archy-Pi"
 }

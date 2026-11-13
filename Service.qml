@@ -14,7 +14,42 @@ Item {
   property string provider: "anthropic"
   property string barWindow: "auto"
   property string showAs: "used"
-  property int refreshIntervalSec: 120
+  property int refreshIntervalSec: 300
+
+  // Whether the panel is open, pushed in by the BarWidget. Polling
+  // slows while the panel is closed so providers are not hammered
+  // around the clock for a number nobody is looking at.
+  property bool panelOpen: false
+  // Consecutive failed fetches. Each one doubles the poll interval
+  // (exponential back-off); a success resets it to 0.
+  property int consecutiveFailures: 0
+  // Epoch ms of the last successful fetch (0 = never). Changing the
+  // poll interval restarts the poll Timer's countdown, so toggling the
+  // panel could otherwise keep pushing the next fetch back and leave
+  // the panel showing ~10 min old data. On panel open we fetch
+  // immediately when the data is older than the base interval.
+  property var lastFetchMs: 0
+  // Back-off never exceeds 30 minutes.
+  readonly property int maxBackoffMs: 1800000
+  // The live poll interval, recomputed whenever the base, the panel
+  // state, or the failure count changes.
+  readonly property int pollIntervalMs: Model.pollIntervalMs(root.refreshIntervalSec, root.panelOpen, root.consecutiveFailures, root.maxBackoffMs)
+
+  onPanelOpenChanged: {
+    if (root.panelOpen)
+      root.maybeFetchOnPanelOpen();
+  }
+
+  // When the panel opens, fetch immediately if the data is older than
+  // the base interval (or never fetched). The poll Timer's countdown
+  // restarts whenever its interval changes, so without this the panel
+  // could open on data up to ~10 min old.
+  function maybeFetchOnPanelOpen() {
+    var now = new Date().getTime();
+    var baseMs = Math.max(30, root.refreshIntervalSec) * 1000;
+    if (!root.lastFetchMs || now - root.lastFetchMs > baseMs)
+      root.refresh();
+  }
 
   // Live state.
   property var report: null
@@ -79,6 +114,9 @@ Item {
       // Keep the last good report on screen, marked stale, instead of
       // blanking the bar. A failed fetch is a fetch problem, not a data
       // problem: the previous numbers are still the best thing to show.
+      // Back off: the next poll waits longer, and the wait grows with
+      // each consecutive failure until a fetch succeeds.
+      root.consecutiveFailures += 1;
       root.stale = root.report !== null;
       if (!root.report)
         root.error = "Couldn't read OMP usage just now.";
@@ -86,11 +124,14 @@ Item {
     }
     var parsed = Model.parseUsageReport(output);
     if (!parsed) {
+      root.consecutiveFailures += 1;
       root.stale = root.report !== null;
       if (!root.report)
         root.error = "OMP usage came back in a shape I don't recognise.";
       return;
     }
+    root.consecutiveFailures = 0;
+    root.lastFetchMs = new Date().getTime();
     root.report = parsed;
     root.stale = false;
     root.error = "";
@@ -108,7 +149,7 @@ Item {
 
   Timer {
     id: pollTimer
-    interval: Math.max(30, root.refreshIntervalSec) * 1000
+    interval: root.pollIntervalMs
     repeat: true
     running: true
     triggeredOnStart: true
