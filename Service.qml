@@ -23,11 +23,33 @@ Item {
   // Consecutive failed fetches. Each one doubles the poll interval
   // (exponential back-off); a success resets it to 0.
   property int consecutiveFailures: 0
+  // Epoch ms of the last successful fetch (0 = never). Changing the
+  // poll interval restarts the poll Timer's countdown, so toggling the
+  // panel could otherwise keep pushing the next fetch back and leave
+  // the panel showing ~10 min old data. On panel open we fetch
+  // immediately when the data is older than the base interval.
+  property var lastFetchMs: 0
   // Back-off never exceeds 30 minutes.
   readonly property int maxBackoffMs: 1800000
   // The live poll interval, recomputed whenever the base, the panel
   // state, or the failure count changes.
   readonly property int pollIntervalMs: Model.pollIntervalMs(root.refreshIntervalSec, root.panelOpen, root.consecutiveFailures, root.maxBackoffMs)
+
+  onPanelOpenChanged: {
+    if (root.panelOpen)
+      root.maybeFetchOnPanelOpen();
+  }
+
+  // When the panel opens, fetch immediately if the data is older than
+  // the base interval (or never fetched). The poll Timer's countdown
+  // restarts whenever its interval changes, so without this the panel
+  // could open on data up to ~10 min old.
+  function maybeFetchOnPanelOpen() {
+    var now = new Date().getTime();
+    var baseMs = Math.max(30, root.refreshIntervalSec) * 1000;
+    if (!root.lastFetchMs || now - root.lastFetchMs > baseMs)
+      root.refresh();
+  }
 
   // Live state.
   property var report: null
@@ -109,6 +131,7 @@ Item {
       return;
     }
     root.consecutiveFailures = 0;
+    root.lastFetchMs = new Date().getTime();
     root.report = parsed;
     root.stale = false;
     root.error = "";

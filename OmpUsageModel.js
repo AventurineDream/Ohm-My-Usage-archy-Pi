@@ -159,14 +159,17 @@ function formatResetIn(resetsAt, nowMs) {
 // half that rate so the bar stays fresh without hammering providers
 // around the clock. Each consecutive failure doubles the interval
 // (exponential back-off), capped at maxBackoffMs; a success resets the
-// count to 0, which restores the base cadence.
+// count to 0, which restores the base cadence. The interval never drops
+// below the base: when the base itself exceeds the cap (a long refresh
+// interval, or a closed panel doubling it), back-off must not shorten
+// the wait to the cap.
 function pollIntervalMs(baseSec, panelOpen, consecutiveFailures, maxBackoffMs) {
     var base = Math.max(30, baseSec || 0) * 1000;
     if (!panelOpen)
         base *= 2;
     if (consecutiveFailures > 0) {
         var factor = Math.pow(2, consecutiveFailures);
-        base = Math.min(maxBackoffMs, base * factor);
+        base = Math.max(base, Math.min(maxBackoffMs, base * factor));
     }
     return base;
 }

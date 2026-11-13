@@ -106,6 +106,11 @@ eq(M.pollIntervalMs(300, false, 1, 1800000), 1200000, "poll: closed + 1 failure 
 eq(M.pollIntervalMs(120, true, 0, 1800000), 120000, "poll: custom base 120s respected");
 eq(M.pollIntervalMs(10, true, 0, 1800000), 30000, "poll: base floors at 30s");
 eq(M.pollIntervalMs(0, true, 0, 1800000), 30000, "poll: zero base floors at 30s");
+// Back-off never shortens the wait below the base, even when the base
+// itself exceeds the 30-min cap (long refresh interval, closed panel).
+eq(M.pollIntervalMs(1800, false, 1, 1800000), 3600000, "poll: base 60 min (closed) + failure stays 60 min, not capped to 30");
+eq(M.pollIntervalMs(3600, true, 1, 1800000), 3600000, "poll: base 60 min (open) + failure stays 60 min, not capped to 30");
+eq(M.pollIntervalMs(1800, true, 0, 1800000), 1800000, "poll: base 30 min open, no failure -> 30 min");
 
 // providerLabel / providerShort
 eq(M.providerLabel("anthropic"), "Anthropic", "label: anthropic");
