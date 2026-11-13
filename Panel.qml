@@ -17,6 +17,7 @@ Panel {
   readonly property color foreground: Color.popups.text
   readonly property color activeColor: Color.accent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+  readonly property real maxContentHeight: Math.max(200, Screen.height - 100)
 
   function refresh() {
     if (root.usageService)
@@ -39,7 +40,7 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(390))
-    contentHeight: panel.fittedContentHeight(content.implicitHeight)
+    contentHeight: panel.fittedContentHeight(Math.min(contentColumn.implicitHeight, maxContentHeight))
 
     PanelKeyCatcher {
       id: keyCatcher
