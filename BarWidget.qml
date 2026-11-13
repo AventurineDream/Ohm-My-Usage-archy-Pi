@@ -31,13 +31,14 @@ BarWidget {
 
   // Tone color: exhausted/high usage tints the bar text so a blown
   // window is visible at a glance. Falls back to the bar foreground.
+  // (Color has urgent/accent; there is no alert/warning role.)
   readonly property color barToneColor: {
     if (!root.usageService)
       return button.foreground;
     if (root.usageService.barTone === "critical")
-      return Color.alert;
+      return Color.urgent;
     if (root.usageService.barTone === "high")
-      return Color.warning;
+      return Color.accent;
     return button.foreground;
   }
 
@@ -109,6 +110,7 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: root.barDisplayText
+    foreground: root.barToneColor
     labelVisible: true
     hasVisualContent: text !== ""
     tooltipText: root.usageService && root.usageService.installed ? (root.usageService.stale ? "OMP usage (stale — last fetch failed)" : "OMP usage") : "OMP usage — waiting for the first fetch"
