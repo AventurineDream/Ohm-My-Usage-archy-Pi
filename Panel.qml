@@ -27,9 +27,9 @@ Panel {
 
   function toneColor(tone) {
     if (tone === "critical")
-      return Color.alert;
+      return Color.urgent;
     if (tone === "high")
-      return Color.warning;
+      return Color.accent;
     return root.foreground;
   }
 
