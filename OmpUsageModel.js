@@ -186,6 +186,117 @@ function limitTone(limit) {
     return "ok";
 }
 
+// --- Provider collapse state (Phase 1) ---
+// The panel shows every provider, but with several providers the list
+// gets long. Providers after the first two start collapsed; the user can
+// expand/collapse each one, and the state persists in
+// ~/.config/omarchy/omp-usage-state.json so it survives closing and
+// reopening the panel.
+//
+// The state is an EXPLICIT map, provider id -> boolean (true =
+// collapsed, false = expanded), for every provider the user has
+// touched. A stored value always wins over the default; only ids never
+// touched fall back to "first two expanded, rest collapsed". Storing
+// false explicitly is what makes "expand a default-collapsed provider"
+// stick: without it, the next reconcile would see the id absent and
+// re-apply the collapsed default.
+
+// Default collapse state for a report: an explicit boolean per
+// provider — first two expanded (false), the rest collapsed (true).
+function defaultCollapsedProviders(providers) {
+    var collapsed = {};
+    if (!Array.isArray(providers))
+        return collapsed;
+    for (var i = 0; i < providers.length; i++) {
+        var p = providers[i];
+        if (p && typeof p.id === "string" && p.id !== "")
+            collapsed[p.id] = i >= 2;
+    }
+    return collapsed;
+}
+
+// True when the provider is collapsed in the given state map.
+function isCollapsed(collapsed, providerId) {
+    if (!collapsed || typeof providerId !== "string")
+        return false;
+    return collapsed[providerId] === true;
+}
+
+// Return a NEW state object with the provider's state flipped to an
+// explicit boolean. The input is not mutated, so QML bindings see a
+// changed reference. A provider with no entry yet flips to collapsed
+// (true), matching "absent means default" for the first toggle.
+function toggleCollapsed(collapsed, providerId) {
+    var next = {};
+    if (collapsed && typeof collapsed === "object") {
+        for (var k in collapsed) {
+            if (Object.prototype.hasOwnProperty.call(collapsed, k))
+                next[k] = collapsed[k];
+        }
+    }
+    if (typeof providerId !== "string" || providerId === "")
+        return next;
+    next[providerId] = !isCollapsed(next, providerId);
+    return next;
+}
+
+// Merge a persisted state map over the defaults. Every id in
+// `persisted` keeps its stored boolean (true or false); ids only in
+// `defaults` keep the default. Returns a fresh complete map.
+function mergeCollapseState(persisted, defaults) {
+    var merged = {};
+    if (defaults && typeof defaults === "object") {
+        for (var k in defaults) {
+            if (Object.prototype.hasOwnProperty.call(defaults, k) && typeof defaults[k] === "boolean")
+                merged[k] = defaults[k];
+        }
+    }
+    if (persisted && typeof persisted === "object") {
+        for (var j in persisted) {
+            if (Object.prototype.hasOwnProperty.call(persisted, j) && typeof persisted[j] === "boolean")
+                merged[j] = persisted[j];
+        }
+    }
+    return merged;
+}
+
+// Parse the persisted collapse-state file. The file holds a JSON object
+// mapping provider id -> boolean (true = collapsed, false = expanded).
+// Returns {} for missing, malformed, or wrongly-shaped content — a bad
+// state file must never break the panel, it just resets to the defaults.
+function parseCollapseState(jsonText) {
+    if (typeof jsonText !== "string" || jsonText.trim() === "")
+        return {};
+    var data;
+    try {
+        data = JSON.parse(jsonText);
+    } catch (e) {
+        return {};
+    }
+    if (!data || typeof data !== "object" || Array.isArray(data))
+        return {};
+    var collapsed = {};
+    for (var k in data) {
+        if (Object.prototype.hasOwnProperty.call(data, k) && typeof data[k] === "boolean")
+            collapsed[k] = data[k];
+    }
+    return collapsed;
+}
+
+// Serialize the collapse state for the state file. Keeps both true and
+// false entries: an explicit false is what makes an expanded provider
+// stay expanded across reconciles.
+function collapseStateText(collapsed) {
+    if (!collapsed || typeof collapsed !== "object")
+        return "{}";
+    var out = {};
+    for (var k in collapsed) {
+        if (Object.prototype.hasOwnProperty.call(collapsed, k) && typeof collapsed[k] === "boolean")
+            out[k] = collapsed[k];
+    }
+    return JSON.stringify(out);
+}
+
 if (typeof module !== "undefined" && module.exports) {
     module.exports = {
         providerLabel: providerLabel,
@@ -197,6 +308,12 @@ if (typeof module !== "undefined" && module.exports) {
         formatBarValue: formatBarValue,
         formatResetIn: formatResetIn,
         limitTone: limitTone,
-        pollIntervalMs: pollIntervalMs
+        pollIntervalMs: pollIntervalMs,
+        defaultCollapsedProviders: defaultCollapsedProviders,
+        isCollapsed: isCollapsed,
+        toggleCollapsed: toggleCollapsed,
+        mergeCollapseState: mergeCollapseState,
+        parseCollapseState: parseCollapseState,
+        collapseStateText: collapseStateText
     };
 }

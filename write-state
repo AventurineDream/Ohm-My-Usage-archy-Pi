@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Atomically replace a verified regular file with the given content.
+# Usage: write-state [--create] <file> <content>
+# Without --create the file must already exist (a missing state file is
+# a failure, not a blank to fill in). With --create the file is created
+# if it does not exist (mode 0644) — the collapse state
+# (~/.config/omarchy/omp-usage-state.json) uses this, so the first
+# expand/collapse can start the file. An existing file must be a regular
+# file (never a symlink). The parent directory must exist and not be a
+# symlink. Content is capped at 1 MiB. Writes to a temp file in the same
+# directory, then renames.
+set -euo pipefail
+
+# The write itself runs in Python. If it is missing, fail loudly (a
+# silent failure would just look like the slider snapping back).
+[[ -x /usr/bin/python3 ]] || { echo "write-state: /usr/bin/python3 is required but not found" >&2; exit 1; }
+
+create=0
+if [[ "${1:-}" == "--create" ]]; then
+  create=1
+  shift
+fi
+
+file="${1:?file required}"
+content="${2:?content required}"
+
+[[ "$file" == /* ]] || exit 1
+[[ "${#content}" -le 1048576 ]] || exit 1
+dir="${file%/*}"
+[[ "$dir" == /* ]] || exit 1
+[[ -d "$dir" ]] || exit 1
+[[ ! -L "$dir" ]] || exit 1
+exec /usr/bin/python3 - "$file" "$content" "$create" <<'EOF'
+import os
+import stat as statmod
+import sys
+import tempfile
+
+path, content, create = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
+try:
+    fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW)
+except FileNotFoundError:
+    if not create:
+        sys.exit(1)
+    # The file does not exist yet (the collapse state, before the first
+    # expand/collapse). Create it — O_CREAT|O_EXCL refuses if the path
+    # appears in the meantime, including as a symlink, so nothing is
+    # followed.
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+except OSError:
+    sys.exit(1)
+try:
+    st = os.fstat(fd)
+    if not statmod.S_ISREG(st.st_mode):
+        sys.exit(1)
+    mode = statmod.S_IMODE(st.st_mode)
+finally:
+    os.close(fd)
+
+directory = os.path.dirname(path)
+fd, tmp = tempfile.mkstemp(prefix=".write-state-", dir=directory)
+try:
+    with os.fdopen(fd, "w") as f:
+        f.write(content)
+        f.flush()
+        os.fsync(f.fileno())
+    os.chmod(tmp, mode)
+    os.replace(tmp, path)
+except OSError:
+    try:
+        os.unlink(tmp)
+    except OSError:
+        pass
+    sys.exit(1)
+EOF

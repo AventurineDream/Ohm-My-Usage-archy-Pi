@@ -120,5 +120,40 @@ eq(M.providerShort("anthropic"), "cld", "short: anthropic -> cld");
 eq(M.providerShort("openai-codex"), "codex", "short: codex");
 eq(M.providerShort("unknown-provider"), "unkn", "short: unknown falls back to 4 chars");
 
+// Collapse helpers (Phase 1). The state is an explicit true/false map:
+// a stored value always wins over the default, so expanding a
+// default-collapsed provider sticks across reconciles.
+var three = [{ id: "anthropic" }, { id: "openai-codex" }, { id: "devin" }];
+var dflt = M.defaultCollapsedProviders(three);
+eq(JSON.stringify(dflt), JSON.stringify({ anthropic: false, "openai-codex": false, devin: true }), "collapse: default is explicit for all three (first two expanded)");
+eq(JSON.stringify(M.defaultCollapsedProviders([{ id: "a" }])), JSON.stringify({ a: false }), "collapse: 1 provider -> explicit false");
+eq(JSON.stringify(M.defaultCollapsedProviders([{ id: "a" }, { id: "b" }])), JSON.stringify({ a: false, b: false }), "collapse: 2 providers -> both explicit false");
+eq(JSON.stringify(M.defaultCollapsedProviders(null)), "{}", "collapse: null providers -> {}");
+eq(M.isCollapsed(dflt, "devin"), true, "collapse: devin is collapsed");
+eq(M.isCollapsed(dflt, "anthropic"), false, "collapse: anthropic is expanded");
+eq(M.isCollapsed(null, "devin"), false, "collapse: null set -> expanded");
+var toggled = M.toggleCollapsed(dflt, "devin");
+eq(JSON.stringify(toggled), JSON.stringify({ anthropic: false, "openai-codex": false, devin: false }), "collapse: toggling devin expands it (explicit false)");
+eq(JSON.stringify(dflt), JSON.stringify({ anthropic: false, "openai-codex": false, devin: true }), "collapse: toggle does not mutate the input");
+eq(JSON.stringify(M.toggleCollapsed(toggled, "anthropic")), JSON.stringify({ anthropic: true, "openai-codex": false, devin: false }), "collapse: toggling anthropic collapses it (explicit true)");
+// Expand-sticks: a default-collapsed provider expanded by the user must
+// stay expanded after a reconcile (the next fetch). The stored false
+// wins over the collapsed default.
+var expanded = M.toggleCollapsed(dflt, "devin");
+var persisted = M.parseCollapseState(M.collapseStateText(expanded));
+var reconciled = M.mergeCollapseState(persisted, M.defaultCollapsedProviders(three));
+eq(M.isCollapsed(reconciled, "devin"), false, "collapse: expand a default-collapsed provider, reconcile, still expanded");
+eq(M.isCollapsed(reconciled, "anthropic"), false, "collapse: untouched first provider stays expanded after reconcile");
+eq(JSON.stringify(M.mergeCollapseState({ devin: false }, { anthropic: false, "openai-codex": false, devin: true })), JSON.stringify({ anthropic: false, "openai-codex": false, devin: false }), "collapse: merge lets stored false win over default true");
+eq(JSON.stringify(M.mergeCollapseState({}, { a: false, b: true })), JSON.stringify({ a: false, b: true }), "collapse: merge with empty persisted keeps defaults");
+eq(JSON.stringify(M.parseCollapseState('{"devin":true,"anthropic":false}')), JSON.stringify({ devin: true, anthropic: false }), "collapse: parse keeps both true and false");
+eq(JSON.stringify(M.parseCollapseState("")), "{}", "collapse: parse empty -> {}");
+eq(JSON.stringify(M.parseCollapseState("not json")), "{}", "collapse: parse bad JSON -> {}");
+eq(JSON.stringify(M.parseCollapseState("[1,2]")), "{}", "collapse: parse array -> {}");
+eq(JSON.stringify(M.parseCollapseState('{"devin":"yes","xai":true}')), JSON.stringify({ xai: true }), "collapse: parse keeps only boolean values");
+eq(M.collapseStateText({ devin: true, anthropic: false }), '{"devin":true,"anthropic":false}', "collapse: serialize keeps both true and false");
+eq(M.collapseStateText({}), "{}", "collapse: serialize empty -> {}");
+eq(M.collapseStateText(null), "{}", "collapse: serialize null -> {}");
+
 console.log("OmpUsageModel tests: " + passed + " passed, " + failed + " failed");
 process.exit(failed === 0 ? 0 : 1);

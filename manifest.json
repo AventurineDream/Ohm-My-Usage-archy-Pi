@@ -15,6 +15,8 @@
    "provider": "anthropic",
    "refreshIntervalSec": 300,
    "showAs": "used",
+   "showBarValue": true,
+   "showPanelBars": true,
    "showProvider": false
   },
   "description": "Your OMP provider usage, live in the top bar, with a panel showing every provider's limits and reset times. Data comes from `omp usage --json`.",
@@ -66,6 +68,20 @@
     "key": "showProvider",
     "label": "Show provider name",
     "type": "boolean"
+   },
+   {
+    "defaultValue": true,
+    "description": "Show the usage number in the top bar. When off, the bar shows only the provider's short name (or nothing when the provider name is also off).",
+    "key": "showBarValue",
+    "label": "Show usage value in bar",
+    "type": "boolean"
+   },
+   {
+    "defaultValue": true,
+    "description": "Show the usage progress bars in the panel. When off, each limit is a single text row, which makes a long provider list much more compact.",
+    "key": "showPanelBars",
+    "label": "Show usage bars in panel",
+    "type": "boolean"
    }
   ]
  },
@@ -82,6 +98,6 @@
  "license": "MIT",
  "name": "Ohm-My-Usage-archy-Pi",
  "schemaVersion": 1,
- "version": "0.2.0",
+ "version": "0.3.0",
  "homepage": "https://github.com/AventurineDream/Ohm-My-Usage-archy-Pi"
 }
