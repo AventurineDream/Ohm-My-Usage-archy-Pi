@@ -89,6 +89,12 @@ Item {
   property bool stale: false
   property string error: ""
   property var lastGoodAt: null
+  // Whether a drag-to-sort is in progress (set by the panel's grip).
+  // While true, a poll that lands is stashed in pendingReport instead
+  // of replacing the report, so the dragged delegate is not destroyed
+  // mid-drag. The panel applies the stashed report when the drag ends.
+  property bool dragging: false
+  property var pendingReport: null
 
   // The usage JSON is small (tens of KB for a handful of providers), but
   // cap it anyway: a runaway `omp` must never fill memory. 256 KiB is
@@ -148,6 +154,22 @@ Item {
     root.report = { providers: Model.applyProviderOrder(root.report.providers, root.persistedOrder) };
   }
 
+  // Apply a report that was stashed while a drag was in progress.
+  // Called by the panel when the drag ends. No-op when nothing is
+  // pending. Runs the same reconcile + derive steps as a fresh fetch,
+  // so the stashed data lands sorted to the (possibly just changed)
+  // persisted order.
+  function applyPendingReport() {
+    if (!root.pendingReport)
+      return;
+    var parsed = root.pendingReport;
+    root.pendingReport = null;
+    root.report = parsed;
+    root.applyCollapseDefaults();
+    root.applyProviderOrder();
+    root.deriveBar();
+  }
+
   // Move a provider in the display order (drag-to-sort). `from` and
   // `to` are indices in the current display order. The new order is
   // persisted, so it survives the next refetch. A no-op move (dropped
@@ -188,6 +210,11 @@ Item {
   property bool providerStateWritePending: false
 
   function saveProviderState() {
+    // Do not write before the state file has loaded: persistedOrder
+    // is still [] then, and an early save (e.g. a collapse toggle
+    // landing before the read finishes) would wipe the stored order.
+    if (!root.providerStateLoaded)
+      return;
     if (providerStateWriteProc.running) {
       root.providerStateWritePending = true;
       return;
@@ -277,11 +304,18 @@ Item {
     }
     root.consecutiveFailures = 0;
     root.lastFetchMs = new Date().getTime();
-    root.report = parsed;
     root.stale = false;
     root.error = "";
     root.installed = true;
     root.lastGoodAt = new Date();
+    if (root.dragging) {
+      // A drag is in progress: stash the fresh report instead of
+      // replacing it, so the dragged delegate is not destroyed
+      // mid-drag. The panel applies it when the drag ends.
+      root.pendingReport = parsed;
+      return;
+    }
+    root.report = parsed;
     root.applyCollapseDefaults();
     root.applyProviderOrder();
     root.deriveBar();

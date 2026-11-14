@@ -450,6 +450,32 @@ Panel {
               property real layoutY: 0
               z: dragging ? 10 : 0
 
+              // End the drag and restore the panel state. Called from
+              // onReleased, onCanceled, and Component.onDestruction.
+              // A no-op when not dragging, so the destruction path is
+              // safe even when the drag already ended normally.
+              function endDrag() {
+                if (!delegateRoot.dragging)
+                  return;
+                delegateRoot.dragging = false;
+                if (providerList.dragItem === delegateRoot)
+                  providerList.dragItem = null;
+                scroller.interactive = true;
+                if (root.usageService)
+                  root.usageService.dragging = false;
+                // Last: the cursor is cosmetic, and the grip may
+                // already be gone when this runs from onDestruction.
+                gripArea.cursorShape = Qt.OpenHandCursor;
+              }
+
+              Component.onDestruction: {
+                // Safety net: if this delegate is destroyed mid-drag
+                // (a poll replacing the report, or the panel closing),
+                // restore the panel state instead of leaving scrolling
+                // off and dragItem pointing at a dead item.
+                delegateRoot.endDrag();
+              }
+
               Column {
                 id: providerSection
                 // NOTE: no `required property var modelData` here. This
@@ -511,15 +537,18 @@ Panel {
                           // from treating it as one.
                           scroller.interactive = false;
                           gripArea.cursorShape = Qt.ClosedHandCursor;
+                          // Tell the Service a drag is in progress, so
+                          // a poll that lands mid-drag is stashed
+                          // instead of replacing the report (which
+                          // would destroy this delegate).
+                          if (root.usageService)
+                            root.usageService.dragging = true;
                         }
                         onReleased: function (mouse) {
                           var from = delegateRoot.index;
                           var centerY = delegateRoot.y + delegateRoot.height / 2;
                           var target = providerList.dropIndex(centerY);
-                          delegateRoot.dragging = false;
-                          providerList.dragItem = null;
-                          scroller.interactive = true;
-                          gripArea.cursorShape = Qt.OpenHandCursor;
+                          delegateRoot.endDrag();
                           if (target !== from && root.usageService) {
                             root.usageService.moveProvider(from, target);
                             // The model change recreates the delegates;
@@ -529,6 +558,20 @@ Panel {
                             // position.
                             delegateRoot.y = delegateRoot.layoutY;
                           }
+                          // Apply any report stashed by a poll that
+                          // landed mid-drag.
+                          if (root.usageService)
+                            root.usageService.applyPendingReport();
+                        }
+                        onCanceled: function () {
+                          // The grab was stolen (another item, a popup,
+                          // the window losing focus): end the drag and
+                          // snap back. Without this, scroller.interactive
+                          // would stay false until the shell restarts.
+                          delegateRoot.endDrag();
+                          delegateRoot.y = delegateRoot.layoutY;
+                          if (root.usageService)
+                            root.usageService.applyPendingReport();
                         }
                       }
                     }
