@@ -136,7 +136,7 @@ Panel {
             Text {
               visible: root.usageService && root.usageService.stale
               text: "stale"
-              color: Color.warning
+              color: Color.accent
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
             }
@@ -185,7 +185,7 @@ Panel {
                 width: parent.width
                 spacing: Style.space(6)
                 Text {
-                  text: root.settingsExpanded ? "▾" : "▸"
+                  text: root.settingsExpanded ? "v" : ">"
                   color: root.foreground
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.body
@@ -390,7 +390,7 @@ Panel {
                   width: parent.width
                   spacing: Style.space(6)
                   Text {
-                    text: providerSection.collapsed ? "▸" : "▾"
+                    text: providerSection.collapsed ? ">" : "v"
                     color: root.foreground
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.body

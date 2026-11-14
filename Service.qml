@@ -29,6 +29,11 @@ Item {
   // collapsed (Model.defaultCollapsedProviders).
   property var collapsedProviders: ({})
   property bool collapseStateLoaded: false
+  // The raw set read from the state file (before merging with the
+  // defaults). Kept separate so the merge can run whenever the report
+  // arrives, regardless of whether the state file or the first fetch
+  // finished first.
+  property var persistedCollapsed: ({})
   readonly property string collapseStatePath: Quickshell.env("HOME") + "/.config/omarchy/omp-usage-state.json"
   readonly property int maxStateBytes: 65536
   readonly property string readStateScriptPath: Qt.resolvedUrl("read-state").toString().replace(/^file:\/\//, "")
@@ -120,25 +125,29 @@ Item {
 
   function applyCollapseState(ok, output) {
     root.collapseStateLoaded = true;
-    var parsed = Model.parseCollapseState(ok ? output : "");
-    if (root.report && root.report.providers) {
-      // Merge the persisted set with the defaults: a provider the user
-      // never touched follows the default (first two expanded, rest
-      // collapsed); a provider in the file keeps its stored state.
-      var dflt = Model.defaultCollapsedProviders(root.report.providers);
-      var merged = {};
-      root.report.providers.forEach(function (p) {
-        if (!p || typeof p.id !== "string")
-          return;
-        if (Object.prototype.hasOwnProperty.call(parsed, p.id))
-          merged[p.id] = true;
-        else if (dflt[p.id])
-          merged[p.id] = true;
-      });
-      root.collapsedProviders = merged;
-    } else {
-      root.collapsedProviders = parsed;
-    }
+    root.persistedCollapsed = Model.parseCollapseState(ok ? output : "");
+    root.reconcileCollapseState();
+  }
+
+  // Merge the persisted set with the defaults for the current report:
+  // a provider the user never touched follows the default (first two
+  // expanded, rest collapsed); a provider in the file keeps its stored
+  // state. Runs whenever either the state file or the report lands,
+  // so the order they finish in does not matter.
+  function reconcileCollapseState() {
+    if (!root.report || !root.report.providers)
+      return;
+    var dflt = Model.defaultCollapsedProviders(root.report.providers);
+    var merged = {};
+    root.report.providers.forEach(function (p) {
+      if (!p || typeof p.id !== "string")
+        return;
+      if (Object.prototype.hasOwnProperty.call(root.persistedCollapsed, p.id))
+        merged[p.id] = true;
+      else if (dflt[p.id])
+        merged[p.id] = true;
+    });
+    root.collapsedProviders = merged;
   }
 
   function saveCollapseState() {
@@ -154,18 +163,17 @@ Item {
 
   function toggleProviderCollapsed(providerId) {
     root.collapsedProviders = Model.toggleCollapsed(root.collapsedProviders, providerId);
+    // Keep the persisted set in sync so a later reconcile (e.g. a new
+    // provider arriving) does not resurrect the old state.
+    root.persistedCollapsed = Model.toggleCollapsed(root.persistedCollapsed, providerId);
     root.saveCollapseState();
   }
 
   // Apply the collapse defaults for the current report (used when the
-  // first fetch lands before the state file has been read, or when the
-  // report gains a provider the state file never mentioned).
+  // first fetch lands). Delegates to the reconcile, which merges the
+  // persisted set with the defaults.
   function applyCollapseDefaults() {
-    if (!root.report || !root.report.providers)
-      return;
-    if (root.collapseStateLoaded)
-      return;
-    root.collapsedProviders = Model.defaultCollapsedProviders(root.report.providers);
+    root.reconcileCollapseState();
   }
 
   // Re-derive the bar display from the current report + settings. Called
