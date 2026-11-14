@@ -34,6 +34,8 @@ Left-click opens the panel. Right-click refreshes now. A failed fetch keeps the 
 
 Each provider in the panel is a collapsible section: click its header to expand or collapse it. The first two providers start expanded and the rest collapsed, so a long list stays short. Your expand/collapse choices are saved in `~/.config/omarchy/omp-usage-state.json` and survive closing and reopening the panel.
 
+Drag a provider by its ⠿ grip (at the left of its header) to reorder the list. The order is saved in the same state file and survives refetches — a provider that appears for the first time is appended at the end. The bar is unaffected: it still shows the configured provider, or the highest-used one on Auto.
+
 ## Development
 
 The model (`OmpUsageModel.js`) is pure functions over the `omp usage --json` shape, with a node harness:

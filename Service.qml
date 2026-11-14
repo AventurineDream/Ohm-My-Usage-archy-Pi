@@ -21,20 +21,23 @@ Item {
   property bool showBarValue: true
   property bool showPanelBars: true
 
-  // Collapse state for the panel's provider sections. A plain object
-  // mapping provider id -> true for collapsed providers; expanded ones
-  // are absent. Persisted in ~/.config/omarchy/omp-usage-state.json so
-  // it survives closing and reopening the panel (and restarts). When
-  // no state file exists yet, providers after the first two start
-  // collapsed (Model.defaultCollapsedProviders).
+  // Provider state for the panel: which sections are collapsed, and
+  // the display order (drag-to-sort). Persisted in
+  // ~/.config/omarchy/omp-usage-state.json as a versioned object
+  // { version: 2, collapsed: {...}, order: [...] } so both survive
+  // closing and reopening the panel (and restarts). A v1 file (a flat
+  // id -> boolean collapse map) migrates on read. When no state file
+  // exists yet, providers after the first two start collapsed
+  // (Model.defaultCollapsedProviders) and the order is the fetch order.
   property var collapsedProviders: ({})
-  property bool collapseStateLoaded: false
-  // The raw set read from the state file (before merging with the
+  property bool providerStateLoaded: false
+  // The raw sets read from the state file (before merging with the
   // defaults). Kept separate so the merge can run whenever the report
   // arrives, regardless of whether the state file or the first fetch
   // finished first.
   property var persistedCollapsed: ({})
-  readonly property string collapseStatePath: Quickshell.env("HOME") + "/.config/omarchy/omp-usage-state.json"
+  property var persistedOrder: []
+  readonly property string providerStatePath: Quickshell.env("HOME") + "/.config/omarchy/omp-usage-state.json"
   readonly property int maxStateBytes: 65536
   readonly property string readStateScriptPath: Qt.resolvedUrl("read-state").toString().replace(/^file:\/\//, "")
   readonly property string writeStateScriptPath: Qt.resolvedUrl("write-state").toString().replace(/^file:\/\//, "")
@@ -86,6 +89,12 @@ Item {
   property bool stale: false
   property string error: ""
   property var lastGoodAt: null
+  // Whether a drag-to-sort is in progress (set by the panel's grip).
+  // While true, a poll that lands is stashed in pendingReport instead
+  // of replacing the report, so the dragged delegate is not destroyed
+  // mid-drag. The panel applies the stashed report when the drag ends.
+  property bool dragging: false
+  property var pendingReport: null
 
   // The usage JSON is small (tens of KB for a handful of providers), but
   // cap it anyway: a runaway `omp` must never fill memory. 256 KiB is
@@ -111,22 +120,77 @@ Item {
     root.deriveBar();
   }
 
-  // --- Collapse state (Phase 1) ---
-  // The state file holds { providerId: true } for collapsed providers.
+  // --- Provider state (collapse + order) ---
+  // The state file holds { version: 2, collapsed: {...}, order: [...] }.
   // A missing file is not an error: the first two providers start
-  // expanded and the rest collapsed (Model.defaultCollapsedProviders).
-  function loadCollapseState() {
-    if (collapseStateProc.running)
+  // expanded and the rest collapsed (Model.defaultCollapsedProviders),
+  // and the order is the fetch order.
+  function loadProviderState() {
+    if (providerStateProc.running)
       return;
-    collapseStateProc.collected = "";
-    collapseStateProc.command = ["bash", root.readStateScriptPath, root.collapseStatePath, String(root.maxStateBytes)];
-    collapseStateProc.running = true;
+    providerStateProc.collected = "";
+    providerStateProc.command = ["bash", root.readStateScriptPath, root.providerStatePath, String(root.maxStateBytes)];
+    providerStateProc.running = true;
   }
 
-  function applyCollapseState(ok, output) {
-    root.collapseStateLoaded = true;
-    root.persistedCollapsed = Model.parseCollapseState(ok ? output : "");
+  function applyProviderState(ok, output) {
+    root.providerStateLoaded = true;
+    var state = Model.parseProviderState(ok ? output : "");
+    root.persistedCollapsed = state.collapsed;
+    root.persistedOrder = state.order;
     root.reconcileCollapseState();
+    root.applyProviderOrder();
+  }
+
+  // Re-sort the current report to the persisted display order. Runs
+  // whenever the report or the state file lands, so the order they
+  // finish in does not matter. Providers not in the stored order (new
+  // providers) are appended in fetch order. The report is reassigned
+  // to a new object so QML bindings on it re-evaluate (mutating the
+  // providers array in place would not notify).
+  function applyProviderOrder() {
+    if (!root.report || !root.report.providers)
+      return;
+    root.report = { providers: Model.applyProviderOrder(root.report.providers, root.persistedOrder) };
+  }
+
+  // Apply a report that was stashed while a drag was in progress.
+  // Called by the panel when the drag ends. No-op when nothing is
+  // pending. Runs the same reconcile + derive steps as a fresh fetch,
+  // so the stashed data lands sorted to the (possibly just changed)
+  // persisted order.
+  function applyPendingReport() {
+    if (!root.pendingReport)
+      return;
+    var parsed = root.pendingReport;
+    root.pendingReport = null;
+    root.report = parsed;
+    root.applyCollapseDefaults();
+    root.applyProviderOrder();
+    root.deriveBar();
+  }
+
+  // Move a provider in the display order (drag-to-sort). `from` and
+  // `to` are indices in the current display order. The new order is
+  // persisted, so it survives the next refetch. A no-op move (dropped
+  // on itself) writes nothing.
+  function moveProvider(from, to) {
+    if (!root.report || !root.report.providers)
+      return;
+    var ids = [];
+    root.report.providers.forEach(function (p) { ids.push(p.id); });
+    var next = Model.moveProviderOrder(ids, from, to);
+    var changed = next.length !== ids.length;
+    if (!changed) {
+      for (var i = 0; i < next.length; i++) {
+        if (next[i] !== ids[i]) { changed = true; break; }
+      }
+    }
+    if (!changed)
+      return;
+    root.persistedOrder = next;
+    root.report = { providers: Model.applyProviderOrder(root.report.providers, next) };
+    root.saveProviderState();
   }
 
   // Merge the persisted set with the defaults for the current report:
@@ -140,18 +204,23 @@ Item {
     root.collapsedProviders = Model.mergeCollapseState(root.persistedCollapsed, Model.defaultCollapsedProviders(root.report.providers));
   }
 
-  // Pending flag (OmoPomodorachy #14 pattern): a toggle that lands
+  // Pending flag (OmoPomodorachy #14 pattern): a change that lands
   // while a write is running sets the flag instead of being dropped;
   // the write's onExited re-runs the save with the latest state.
-  property bool collapseStateWritePending: false
+  property bool providerStateWritePending: false
 
-  function saveCollapseState() {
-    if (collapseStateWriteProc.running) {
-      root.collapseStateWritePending = true;
+  function saveProviderState() {
+    // Do not write before the state file has loaded: persistedOrder
+    // is still [] then, and an early save (e.g. a collapse toggle
+    // landing before the read finishes) would wipe the stored order.
+    if (!root.providerStateLoaded)
+      return;
+    if (providerStateWriteProc.running) {
+      root.providerStateWritePending = true;
       return;
     }
-    collapseStateWriteProc.command = ["bash", root.writeStateScriptPath, "--create", root.collapseStatePath, Model.collapseStateText(root.collapsedProviders)];
-    collapseStateWriteProc.running = true;
+    providerStateWriteProc.command = ["bash", root.writeStateScriptPath, "--create", root.providerStatePath, Model.providerStateText(root.collapsedProviders, root.persistedOrder)];
+    providerStateWriteProc.running = true;
   }
 
   function isProviderCollapsed(providerId) {
@@ -175,7 +244,7 @@ Item {
     }
     p[providerId] = Model.isCollapsed(next, providerId);
     root.persistedCollapsed = p;
-    root.saveCollapseState();
+    root.saveProviderState();
   }
 
   // Apply the collapse defaults for the current report (used when the
@@ -235,12 +304,20 @@ Item {
     }
     root.consecutiveFailures = 0;
     root.lastFetchMs = new Date().getTime();
-    root.report = parsed;
     root.stale = false;
     root.error = "";
     root.installed = true;
     root.lastGoodAt = new Date();
+    if (root.dragging) {
+      // A drag is in progress: stash the fresh report instead of
+      // replacing it, so the dragged delegate is not destroyed
+      // mid-drag. The panel applies it when the drag ends.
+      root.pendingReport = parsed;
+      return;
+    }
+    root.report = parsed;
     root.applyCollapseDefaults();
+    root.applyProviderOrder();
     root.deriveBar();
   }
 
@@ -321,44 +398,45 @@ Item {
     }
   }
 
-  // Collapse-state file I/O. The read/write helpers are invoked via
-  // bash (they are mode 100644 in git, so a direct exec would fail —
-  // the same lesson as OmoPomodorachy's read-config/write-config).
+  // Provider-state file I/O. The read/write helpers are invoked via
+  // bash (they are mode 100755 in git since PR #5, but invoking via
+  // bash is the established pattern here, as with OmoPomodorachy's
+  // read-config/write-config).
   Process {
-    id: collapseStateProc
+    id: providerStateProc
     property string collected: ""
     stdout: SplitParser {
       onRead: function (data) {
-        collapseStateProc.collected += String(data + "\n");
+        providerStateProc.collected += String(data + "\n");
       }
     }
     onExited: function (exitCode) {
-      var out = String(collapseStateProc.collected);
-      collapseStateProc.collected = "";
-      root.applyCollapseState(exitCode === 0, out);
+      var out = String(providerStateProc.collected);
+      providerStateProc.collected = "";
+      root.applyProviderState(exitCode === 0, out);
     }
   }
 
   Process {
-    id: collapseStateWriteProc
+    id: providerStateWriteProc
     stderr: SplitParser {
       onRead: function (data) {
-        console.warn("omp-usage: collapse state write failed: " + String(data));
+        console.warn("omp-usage: provider state write failed: " + String(data));
       }
     }
     onExited: function (exitCode) {
-      // A toggle that landed mid-write set the pending flag; write the
-      // latest state now so the second toggle is not lost.
-      if (root.collapseStateWritePending) {
-        root.collapseStateWritePending = false;
-        root.saveCollapseState();
+      // A change that landed mid-write set the pending flag; write the
+      // latest state now so it is not lost.
+      if (root.providerStateWritePending) {
+        root.providerStateWritePending = false;
+        root.saveProviderState();
       }
     }
   }
 
   Component.onCompleted: {
     OmpShared.ServiceBridge.service = root;
-    root.loadCollapseState();
+    root.loadProviderState();
     root.refresh();
   }
   Component.onDestruction: {

@@ -140,7 +140,7 @@ eq(JSON.stringify(M.toggleCollapsed(toggled, "anthropic")), JSON.stringify({ ant
 // stay expanded after a reconcile (the next fetch). The stored false
 // wins over the collapsed default.
 var expanded = M.toggleCollapsed(dflt, "devin");
-var persisted = M.parseCollapseState(M.collapseStateText(expanded));
+var persisted = M.parseProviderState(M.providerStateText(expanded, [])).collapsed;
 var reconciled = M.mergeCollapseState(persisted, M.defaultCollapsedProviders(three));
 eq(M.isCollapsed(reconciled, "devin"), false, "collapse: expand a default-collapsed provider, reconcile, still expanded");
 eq(M.isCollapsed(reconciled, "anthropic"), false, "collapse: untouched first provider stays expanded after reconcile");
@@ -151,9 +151,55 @@ eq(JSON.stringify(M.parseCollapseState("")), "{}", "collapse: parse empty -> {}"
 eq(JSON.stringify(M.parseCollapseState("not json")), "{}", "collapse: parse bad JSON -> {}");
 eq(JSON.stringify(M.parseCollapseState("[1,2]")), "{}", "collapse: parse array -> {}");
 eq(JSON.stringify(M.parseCollapseState('{"devin":"yes","xai":true}')), JSON.stringify({ xai: true }), "collapse: parse keeps only boolean values");
-eq(M.collapseStateText({ devin: true, anthropic: false }), '{"devin":true,"anthropic":false}', "collapse: serialize keeps both true and false");
-eq(M.collapseStateText({}), "{}", "collapse: serialize empty -> {}");
-eq(M.collapseStateText(null), "{}", "collapse: serialize null -> {}");
+
+// Provider order (drag-to-sort). applyProviderOrder reorders per a
+// stored id list; unknown ids append in fetch order, stale ids drop.
+var four = [{ id: "anthropic" }, { id: "devin" }, { id: "openai-codex" }, { id: "xai-oauth" }];
+function orderIds(list) { return list.map(function (p) { return p.id; }).join(","); }
+eq(orderIds(M.applyProviderOrder(four, ["devin", "anthropic"])), "devin,anthropic,openai-codex,xai-oauth", "order: stored ids first, rest in fetch order");
+eq(orderIds(M.applyProviderOrder(four, [])), "anthropic,devin,openai-codex,xai-oauth", "order: empty order keeps fetch order");
+eq(orderIds(M.applyProviderOrder(four, null)), "anthropic,devin,openai-codex,xai-oauth", "order: null order keeps fetch order");
+eq(orderIds(M.applyProviderOrder(four, ["xai-oauth", "missing", "devin"])), "xai-oauth,devin,anthropic,openai-codex", "order: stale id dropped, rest appended");
+eq(orderIds(M.applyProviderOrder(four, ["xai-oauth", "devin", "openai-codex", "anthropic"])), "xai-oauth,devin,openai-codex,anthropic", "order: full reorder");
+eq(orderIds(M.applyProviderOrder(null, ["devin"])), "", "order: null providers -> []");
+eq(orderIds(M.applyProviderOrder(four, ["devin", "devin", "anthropic"])), "devin,anthropic,openai-codex,xai-oauth", "order: duplicate stored id used once");
+M.applyProviderOrder(four, ["devin", "anthropic"]);
+eq(orderIds(four), "anthropic,devin,openai-codex,xai-oauth", "order: input providers not mutated");
+
+// moveProviderOrder: index-based move, returns a new list.
+eq(JSON.stringify(M.moveProviderOrder(["a", "b", "c", "d"], 0, 2)), JSON.stringify(["b", "c", "a", "d"]), "move: first to third");
+eq(JSON.stringify(M.moveProviderOrder(["a", "b", "c", "d"], 3, 0)), JSON.stringify(["d", "a", "b", "c"]), "move: last to first");
+eq(JSON.stringify(M.moveProviderOrder(["a", "b", "c"], 1, 1)), JSON.stringify(["a", "b", "c"]), "move: same index is a no-op");
+eq(JSON.stringify(M.moveProviderOrder(["a", "b", "c"], 0, 99)), JSON.stringify(["b", "c", "a"]), "move: target clamps to end");
+eq(JSON.stringify(M.moveProviderOrder(["a", "b", "c"], 0, -5)), JSON.stringify(["a", "b", "c"]), "move: negative target clamps to start (item stays first)");
+eq(JSON.stringify(M.moveProviderOrder(["a", "b", "c"], 5, 0)), JSON.stringify(["a", "b", "c"]), "move: out-of-range from returns a copy");
+eq(JSON.stringify(M.moveProviderOrder(["a", "b"], -1, 0)), JSON.stringify(["a", "b"]), "move: negative from returns a copy");
+eq(JSON.stringify(M.moveProviderOrder(null, 0, 1)), JSON.stringify([]), "move: null order -> []");
+eq(JSON.stringify(M.moveProviderOrder(["a", "b", 42, "", "c"], 0, 2)), JSON.stringify(["b", "c", "a"]), "move: non-string ids dropped");
+var mv = ["a", "b", "c"];
+M.moveProviderOrder(mv, 0, 2);
+eq(JSON.stringify(mv), JSON.stringify(["a", "b", "c"]), "move: input not mutated");
+
+// Provider state file (v2) + v1 migration.
+var v1 = M.parseProviderState('{"devin":true,"anthropic":false}');
+eq(JSON.stringify(v1.collapsed), JSON.stringify({ devin: true, anthropic: false }), "state: v1 flat map migrates to collapsed");
+eq(JSON.stringify(v1.order), JSON.stringify([]), "state: v1 migrates to empty order");
+var v2 = M.parseProviderState('{"version":2,"collapsed":{"devin":true},"order":["devin","anthropic"]}');
+eq(JSON.stringify(v2.collapsed), JSON.stringify({ devin: true }), "state: v2 collapsed kept");
+eq(JSON.stringify(v2.order), JSON.stringify(["devin", "anthropic"]), "state: v2 order kept");
+eq(JSON.stringify(M.parseProviderState("")), JSON.stringify({ collapsed: {}, order: [] }), "state: parse empty -> empty");
+eq(JSON.stringify(M.parseProviderState("not json")), JSON.stringify({ collapsed: {}, order: [] }), "state: parse bad JSON -> empty");
+eq(JSON.stringify(M.parseProviderState("[1,2]")), JSON.stringify({ collapsed: {}, order: [] }), "state: parse array -> empty");
+eq(JSON.stringify(M.parseProviderState('{"version":2,"collapsed":{"devin":"yes","xai":true},"order":["xai",42,""]}')), JSON.stringify({ collapsed: { xai: true }, order: ["xai"] }), "state: v2 keeps only booleans and string ids");
+eq(JSON.stringify(M.parseProviderState('{"version":1,"collapsed":{"a":true}}')), JSON.stringify({ collapsed: {}, order: [] }), "state: version-1 object (not a flat map) -> empty");
+eq(M.providerStateText({ devin: true, anthropic: false }, ["devin", "anthropic"]), '{"version":2,"collapsed":{"devin":true,"anthropic":false},"order":["devin","anthropic"]}', "state: serialize v2 shape");
+eq(M.providerStateText({ devin: true, anthropic: false }, []), '{"version":2,"collapsed":{"devin":true,"anthropic":false},"order":[]}', "state: serialize keeps both true and false collapse entries");
+eq(M.providerStateText({}, []), '{"version":2,"collapsed":{},"order":[]}', "state: serialize empty -> v2 empty");
+eq(M.providerStateText(null, null), '{"version":2,"collapsed":{},"order":[]}', "state: serialize null -> v2 empty");
+eq(M.providerStateText({ devin: "yes", xai: true }, ["xai", 42, ""]), '{"version":2,"collapsed":{"xai":true},"order":["xai"]}', "state: serialize keeps only booleans and string ids");
+var rt = M.parseProviderState(M.providerStateText({ devin: true, anthropic: false }, ["devin", "anthropic"]));
+eq(JSON.stringify(rt.collapsed), JSON.stringify({ devin: true, anthropic: false }), "state: round-trip collapsed");
+eq(JSON.stringify(rt.order), JSON.stringify(["devin", "anthropic"]), "state: round-trip order");
 
 console.log("OmpUsageModel tests: " + passed + " passed, " + failed + " failed");
 process.exit(failed === 0 ? 0 : 1);
