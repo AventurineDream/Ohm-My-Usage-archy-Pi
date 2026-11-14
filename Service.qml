@@ -130,29 +130,26 @@ Item {
   }
 
   // Merge the persisted set with the defaults for the current report:
-  // a provider the user never touched follows the default (first two
-  // expanded, rest collapsed); a provider in the file keeps its stored
-  // state. Runs whenever either the state file or the report lands,
-  // so the order they finish in does not matter.
+  // a provider with a stored boolean keeps it (true or false); only
+  // ids never touched fall back to the default (first two expanded,
+  // rest collapsed). Runs whenever either the state file or the report
+  // lands, so the order they finish in does not matter.
   function reconcileCollapseState() {
     if (!root.report || !root.report.providers)
       return;
-    var dflt = Model.defaultCollapsedProviders(root.report.providers);
-    var merged = {};
-    root.report.providers.forEach(function (p) {
-      if (!p || typeof p.id !== "string")
-        return;
-      if (Object.prototype.hasOwnProperty.call(root.persistedCollapsed, p.id))
-        merged[p.id] = true;
-      else if (dflt[p.id])
-        merged[p.id] = true;
-    });
-    root.collapsedProviders = merged;
+    root.collapsedProviders = Model.mergeCollapseState(root.persistedCollapsed, Model.defaultCollapsedProviders(root.report.providers));
   }
 
+  // Pending flag (OmoPomodorachy #14 pattern): a toggle that lands
+  // while a write is running sets the flag instead of being dropped;
+  // the write's onExited re-runs the save with the latest state.
+  property bool collapseStateWritePending: false
+
   function saveCollapseState() {
-    if (collapseStateWriteProc.running)
+    if (collapseStateWriteProc.running) {
+      root.collapseStateWritePending = true;
       return;
+    }
     collapseStateWriteProc.command = ["bash", root.writeStateScriptPath, "--create", root.collapseStatePath, Model.collapseStateText(root.collapsedProviders)];
     collapseStateWriteProc.running = true;
   }
@@ -162,10 +159,22 @@ Item {
   }
 
   function toggleProviderCollapsed(providerId) {
-    root.collapsedProviders = Model.toggleCollapsed(root.collapsedProviders, providerId);
-    // Keep the persisted set in sync so a later reconcile (e.g. a new
-    // provider arriving) does not resurrect the old state.
-    root.persistedCollapsed = Model.toggleCollapsed(root.persistedCollapsed, providerId);
+    var next = Model.toggleCollapsed(root.collapsedProviders, providerId);
+    root.collapsedProviders = next;
+    // Record the NEW state explicitly in the persisted set, so it wins
+    // over the default on the next reconcile. (Toggling the persisted
+    // set itself would be wrong: a default-collapsed provider absent
+    // from the file would flip to "collapsed: true" when the user just
+    // expanded it, and the next fetch would snap it shut again.)
+    var p = {};
+    if (root.persistedCollapsed && typeof root.persistedCollapsed === "object") {
+      for (var k in root.persistedCollapsed) {
+        if (Object.prototype.hasOwnProperty.call(root.persistedCollapsed, k))
+          p[k] = root.persistedCollapsed[k];
+      }
+    }
+    p[providerId] = Model.isCollapsed(next, providerId);
+    root.persistedCollapsed = p;
     root.saveCollapseState();
   }
 
@@ -335,6 +344,14 @@ Item {
     stderr: SplitParser {
       onRead: function (data) {
         console.warn("omp-usage: collapse state write failed: " + String(data));
+      }
+    }
+    onExited: function (exitCode) {
+      // A toggle that landed mid-write set the pending flag; write the
+      // latest state now so the second toggle is not lost.
+      if (root.collapseStateWritePending) {
+        root.collapseStateWritePending = false;
+        root.saveCollapseState();
       }
     }
   }

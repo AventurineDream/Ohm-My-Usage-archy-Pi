@@ -15,15 +15,19 @@ BarWidget {
   // Bar text: provider short code + usage, e.g. "cld 100%". When the
   // provider name is shown, the short code is the name; otherwise just
   // the number. A missing/failed fetch shows a quiet "—" instead of
-  // blanking the bar. When showBarValue is off, the number is hidden
-  // and the bar shows just the provider short code.
+  // blanking the bar. When showBarValue is off, the number is hidden:
+  // the bar shows just the provider short code, or nothing at all when
+  // showProvider is off too (matching the manifest text).
   readonly property string barDisplayText: {
     if (!root.usageService || !root.usageService.installed)
       return "—";
     var short = String(root.usageService.barShort || "");
     var value = String(root.usageService.barText || "");
-    if (root.settings && root.settings.showBarValue === false)
-      return short !== "" ? short : "—";
+    if (root.settings && root.settings.showBarValue === false) {
+      if (root.settings.showProvider)
+        return short !== "" ? short : "—";
+      return "";
+    }
     if (value === "")
       return "—";
     if (root.settings && root.settings.showProvider)

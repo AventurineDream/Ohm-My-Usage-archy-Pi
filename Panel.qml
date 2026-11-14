@@ -23,6 +23,33 @@ Panel {
   // Settings section expanded state (panel-local, not persisted).
   property bool settingsExpanded: false
 
+  // Pending settings write: the last settings object handed to
+  // updateEntryInline that the shell has not echoed back yet. A second
+  // toggle before the echo lands merges into this object instead of
+  // re-reading the stale root.settings, so the first change is not
+  // lost. Cleared in onSettingsChanged once root.settings catches up.
+  property var pendingSettings: null
+
+  // When the shell echoes the settings back, clear the pending write
+  // once it matches; if it does not match yet (a newer write is still
+  // in flight), re-send the pending object so nothing is dropped.
+  onSettingsChanged: {
+    if (root.pendingSettings === null || !root.settings)
+      return;
+    var match = true;
+    for (var k in root.pendingSettings) {
+      if (root.settings[k] !== root.pendingSettings[k]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      root.pendingSettings = null;
+    } else if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function") {
+      root.bar.shell.updateEntryInline("aven.omp-usage", root.pendingSettings);
+    }
+  }
+
   function refresh() {
     if (root.usageService)
       root.usageService.refresh();
@@ -37,30 +64,41 @@ Panel {
   }
 
   // Write one settings key. updateEntryInline REPLACES the whole bar
-  // entry, so the full settings object (with defaults filled in for
-  // any key the current settings lack) is passed every time.
+  // entry, so the full settings object is passed every time — copied
+  // from the existing settings (pending write first, else the live
+  // ones), with defaults filled in only for keys that are missing.
+  // Copying instead of rebuilding from a hardcoded key list means a
+  // key added later (or set by hand) is never wiped by a panel change.
   function updateSetting(key, value) {
-    var s = {
-      provider: "anthropic",
-      barWindow: "auto",
-      showAs: "used",
-      refreshIntervalSec: 300,
-      showBarValue: true,
-      showPanelBars: true,
-      showProvider: false
-    };
-    if (root.settings) {
-      for (var k in s) {
-        if (root.settings[k] !== undefined)
-          s[k] = root.settings[k];
-      }
+    var s = {};
+    var base = root.pendingSettings !== null ? root.pendingSettings : root.settings;
+    if (base) {
+      for (var k in base)
+        s[k] = base[k];
     }
+    if (s.provider === undefined)
+      s.provider = "anthropic";
+    if (s.barWindow === undefined)
+      s.barWindow = "auto";
+    if (s.showAs === undefined)
+      s.showAs = "used";
+    if (s.refreshIntervalSec === undefined)
+      s.refreshIntervalSec = 300;
+    if (s.showBarValue === undefined)
+      s.showBarValue = true;
+    if (s.showPanelBars === undefined)
+      s.showPanelBars = true;
+    if (s.showProvider === undefined)
+      s.showProvider = false;
     s[key] = value;
+    root.pendingSettings = s;
     if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
       root.bar.shell.updateEntryInline("aven.omp-usage", s);
   }
 
   function settingValue(key, fallback) {
+    if (root.pendingSettings !== null && root.pendingSettings[key] !== undefined)
+      return root.pendingSettings[key];
     if (root.settings && root.settings[key] !== undefined)
       return root.settings[key];
     return fallback;
@@ -222,7 +260,7 @@ Panel {
                     model: root.usageService && root.usageService.report ? root.usageService.report.providers : []
                     Button {
                       required property var modelData
-                      text: Model.providerShort(modelData.id)
+                      text: (root.settingValue("provider", "anthropic") === modelData.id ? "✓ " : "") + Model.providerShort(modelData.id)
                       fontFamily: root.fontFamily
                       fontSize: Style.font.body
                       foreground: root.foreground
@@ -231,7 +269,7 @@ Panel {
                     }
                   }
                   Button {
-                    text: "Auto"
+                    text: (root.settingValue("provider", "anthropic") === "" ? "✓ " : "") + "Auto"
                     fontFamily: root.fontFamily
                     fontSize: Style.font.body
                     foreground: root.foreground
@@ -255,7 +293,7 @@ Panel {
                 Row {
                   spacing: Style.space(6)
                   Button {
-                    text: "Auto"
+                    text: (root.settingValue("barWindow", "auto") === "auto" ? "✓ " : "") + "Auto"
                     fontFamily: root.fontFamily
                     fontSize: Style.font.body
                     foreground: root.foreground
@@ -263,7 +301,7 @@ Panel {
                     onClicked: root.updateSetting("barWindow", "auto")
                   }
                   Button {
-                    text: "5h"
+                    text: (root.settingValue("barWindow", "auto") === "5h" ? "✓ " : "") + "5h"
                     fontFamily: root.fontFamily
                     fontSize: Style.font.body
                     foreground: root.foreground
@@ -271,7 +309,7 @@ Panel {
                     onClicked: root.updateSetting("barWindow", "5h")
                   }
                   Button {
-                    text: "7d"
+                    text: (root.settingValue("barWindow", "auto") === "7d" ? "✓ " : "") + "7d"
                     fontFamily: root.fontFamily
                     fontSize: Style.font.body
                     foreground: root.foreground
@@ -295,7 +333,7 @@ Panel {
                 Row {
                   spacing: Style.space(6)
                   Button {
-                    text: "Used"
+                    text: (root.settingValue("showAs", "used") === "used" ? "✓ " : "") + "Used"
                     fontFamily: root.fontFamily
                     fontSize: Style.font.body
                     foreground: root.foreground
@@ -303,7 +341,7 @@ Panel {
                     onClicked: root.updateSetting("showAs", "used")
                   }
                   Button {
-                    text: "Left"
+                    text: (root.settingValue("showAs", "used") === "left" ? "✓ " : "") + "Left"
                     fontFamily: root.fontFamily
                     fontSize: Style.font.body
                     foreground: root.foreground

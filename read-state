@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Output at most <max-bytes> of a verified regular file.
-# Usage: read-config <file> <max-bytes>
+# Usage: read-state <file> <max-bytes>
 # A missing file is not an error: it exits 0 with no output (the file's
 # contents are empty), so the caller can tell "no file yet" apart from a
-# failed read (exit 1). That distinction matters for the sessions log —
-# a missing log is an empty log and safe to write, but a failed read of
-# an existing log must never be treated as empty.
+# failed read (exit 1). That distinction matters for the collapse state
+# (~/.config/omarchy/omp-usage-state.json) — a missing state file means
+# "use the defaults", but a failed read of an existing state file must
+# never be treated as empty.
 set -euo pipefail
 
 file="${1:?file required}"
