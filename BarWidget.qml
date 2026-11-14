@@ -35,8 +35,9 @@ BarWidget {
     return value;
   }
 
-  // Tone color: exhausted/high usage tints the bar text so a blown
-  // window is visible at a glance. Falls back to the bar foreground.
+  // Tone color: the bar text is always the theme accent so the usage
+  // reads as a themed readout, not plain bar text; only an exhausted
+  // window goes red (urgent) so a blown window is visible at a glance.
   // (Color has urgent/accent; there is no alert/warning role.)
   readonly property color barToneColor: {
     if (!root.usageService)
@@ -45,7 +46,7 @@ BarWidget {
       return Color.urgent;
     if (root.usageService.barTone === "high")
       return Color.accent;
-    return button.foreground;
+    return Color.accent;
   }
 
   function syncService() {
