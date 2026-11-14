@@ -186,6 +186,91 @@ function limitTone(limit) {
     return "ok";
 }
 
+// --- Provider collapse state (Phase 1) ---
+// The panel shows every provider, but with several providers the list
+// gets long. Providers after the first two start collapsed; the user can
+// expand/collapse each one, and the state persists in
+// ~/.config/omarchy/omp-usage-state.json so it survives closing and
+// reopening the panel. The collapsed set is a plain object mapping
+// provider id -> true. Only collapsed ids are stored (expanded ones are
+// simply absent), so the file stays small.
+
+// Which providers start collapsed: every provider after the first two
+// in report order. Returns a fresh object { providerId: true, ... }.
+function defaultCollapsedProviders(providers) {
+    var collapsed = {};
+    if (!Array.isArray(providers))
+        return collapsed;
+    for (var i = 2; i < providers.length; i++) {
+        var p = providers[i];
+        if (p && typeof p.id === "string" && p.id !== "")
+            collapsed[p.id] = true;
+    }
+    return collapsed;
+}
+
+// True when the provider is in the collapsed set.
+function isCollapsed(collapsed, providerId) {
+    if (!collapsed || typeof providerId !== "string")
+        return false;
+    return collapsed[providerId] === true;
+}
+
+// Return a NEW collapsed object with the provider's state toggled.
+// The input is not mutated, so QML bindings see a changed reference.
+function toggleCollapsed(collapsed, providerId) {
+    var next = {};
+    if (collapsed && typeof collapsed === "object") {
+        for (var k in collapsed) {
+            if (Object.prototype.hasOwnProperty.call(collapsed, k))
+                next[k] = collapsed[k];
+        }
+    }
+    if (typeof providerId !== "string" || providerId === "")
+        return next;
+    if (next[providerId])
+        delete next[providerId];
+    else
+        next[providerId] = true;
+    return next;
+}
+
+// Parse the persisted collapse-state file. The file holds a JSON object
+// mapping provider id -> true (collapsed). Returns {} for missing,
+// malformed, or wrongly-shaped content — a bad state file must never
+// break the panel, it just resets to all-expanded (the defaults then
+// apply on top).
+function parseCollapseState(jsonText) {
+    if (typeof jsonText !== "string" || jsonText.trim() === "")
+        return {};
+    var data;
+    try {
+        data = JSON.parse(jsonText);
+    } catch (e) {
+        return {};
+    }
+    if (!data || typeof data !== "object" || Array.isArray(data))
+        return {};
+    var collapsed = {};
+    for (var k in data) {
+        if (Object.prototype.hasOwnProperty.call(data, k) && data[k] === true)
+            collapsed[k] = true;
+    }
+    return collapsed;
+}
+
+// Serialize the collapsed set for the state file.
+function collapseStateText(collapsed) {
+    if (!collapsed || typeof collapsed !== "object")
+        return "{}";
+    var out = {};
+    for (var k in collapsed) {
+        if (Object.prototype.hasOwnProperty.call(collapsed, k) && collapsed[k] === true)
+            out[k] = true;
+    }
+    return JSON.stringify(out);
+}
+
 if (typeof module !== "undefined" && module.exports) {
     module.exports = {
         providerLabel: providerLabel,
@@ -197,6 +282,11 @@ if (typeof module !== "undefined" && module.exports) {
         formatBarValue: formatBarValue,
         formatResetIn: formatResetIn,
         limitTone: limitTone,
-        pollIntervalMs: pollIntervalMs
+        pollIntervalMs: pollIntervalMs,
+        defaultCollapsedProviders: defaultCollapsedProviders,
+        isCollapsed: isCollapsed,
+        toggleCollapsed: toggleCollapsed,
+        parseCollapseState: parseCollapseState,
+        collapseStateText: collapseStateText
     };
 }

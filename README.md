@@ -18,13 +18,21 @@ Requires `omp` on your PATH (Oh My Pi). The widget polls `omp usage --json` on a
 
 ## Settings
 
-- **Primary provider** — the provider id from `omp usage --json` shown in the bar (e.g. `anthropic`, `openai-codex`, `devin`). Blank falls back to whichever provider is most used.
+The panel has a **Settings** section (tap to expand) so you can change these without leaving the panel. They are also editable from the shell's plugin settings.
+
+- **Primary provider** — the provider id from `omp usage --json` shown in the bar (e.g. `anthropic`, `openai-codex`, `devin`). Auto falls back to whichever provider is most used.
 - **Top bar usage window** — `auto` (highest percent), `5h`, or `7d`.
 - **Show usage as** — `used` or `left`.
 - **Show provider name** — prefix the bar value with the provider's short code.
-- **Refresh interval** — seconds between `omp usage` polls (default 120).
+- **Show usage value in bar** — when off, the bar shows only the provider's short code (no number).
+- **Show usage bars in panel** — when off, each limit is a single text row with no progress bar, which makes a long provider list much more compact.
+- **Refresh interval** — seconds between `omp usage` polls (default 300).
 
 Left-click opens the panel. Right-click refreshes now. A failed fetch keeps the last good numbers on screen, marked stale, instead of blanking the bar.
+
+## Compact panel
+
+Each provider in the panel is a collapsible section: click its header to expand or collapse it. The first two providers start expanded and the rest collapsed, so a long list stays short. Your expand/collapse choices are saved in `~/.config/omarchy/omp-usage-state.json` and survive closing and reopening the panel.
 
 ## Development
 

@@ -15,6 +15,24 @@ Item {
   property string barWindow: "auto"
   property string showAs: "used"
   property int refreshIntervalSec: 300
+  // Whether the bar shows the usage number (false = provider short code
+  // only) and whether the panel shows the usage progress bars (false =
+  // one text row per limit, a much more compact list).
+  property bool showBarValue: true
+  property bool showPanelBars: true
+
+  // Collapse state for the panel's provider sections. A plain object
+  // mapping provider id -> true for collapsed providers; expanded ones
+  // are absent. Persisted in ~/.config/omarchy/omp-usage-state.json so
+  // it survives closing and reopening the panel (and restarts). When
+  // no state file exists yet, providers after the first two start
+  // collapsed (Model.defaultCollapsedProviders).
+  property var collapsedProviders: ({})
+  property bool collapseStateLoaded: false
+  readonly property string collapseStatePath: Quickshell.env("HOME") + "/.config/omarchy/omp-usage-state.json"
+  readonly property int maxStateBytes: 65536
+  readonly property string readStateScriptPath: Qt.resolvedUrl("read-state").toString().replace(/^file:\/\//, "")
+  readonly property string writeStateScriptPath: Qt.resolvedUrl("write-state").toString().replace(/^file:\/\//, "")
 
   // Whether the panel is open, pushed in by the BarWidget. Polling
   // slows while the panel is closed so providers are not hammered
@@ -81,7 +99,73 @@ Item {
       root.showAs = settings.showAs;
     if (typeof settings.refreshIntervalSec === "number" && settings.refreshIntervalSec > 0)
       root.refreshIntervalSec = settings.refreshIntervalSec;
+    if (typeof settings.showBarValue === "boolean")
+      root.showBarValue = settings.showBarValue;
+    if (typeof settings.showPanelBars === "boolean")
+      root.showPanelBars = settings.showPanelBars;
     root.deriveBar();
+  }
+
+  // --- Collapse state (Phase 1) ---
+  // The state file holds { providerId: true } for collapsed providers.
+  // A missing file is not an error: the first two providers start
+  // expanded and the rest collapsed (Model.defaultCollapsedProviders).
+  function loadCollapseState() {
+    if (collapseStateProc.running)
+      return;
+    collapseStateProc.collected = "";
+    collapseStateProc.command = ["bash", root.readStateScriptPath, root.collapseStatePath, String(root.maxStateBytes)];
+    collapseStateProc.running = true;
+  }
+
+  function applyCollapseState(ok, output) {
+    root.collapseStateLoaded = true;
+    var parsed = Model.parseCollapseState(ok ? output : "");
+    if (root.report && root.report.providers) {
+      // Merge the persisted set with the defaults: a provider the user
+      // never touched follows the default (first two expanded, rest
+      // collapsed); a provider in the file keeps its stored state.
+      var dflt = Model.defaultCollapsedProviders(root.report.providers);
+      var merged = {};
+      root.report.providers.forEach(function (p) {
+        if (!p || typeof p.id !== "string")
+          return;
+        if (Object.prototype.hasOwnProperty.call(parsed, p.id))
+          merged[p.id] = true;
+        else if (dflt[p.id])
+          merged[p.id] = true;
+      });
+      root.collapsedProviders = merged;
+    } else {
+      root.collapsedProviders = parsed;
+    }
+  }
+
+  function saveCollapseState() {
+    if (collapseStateWriteProc.running)
+      return;
+    collapseStateWriteProc.command = ["bash", root.writeStateScriptPath, "--create", root.collapseStatePath, Model.collapseStateText(root.collapsedProviders)];
+    collapseStateWriteProc.running = true;
+  }
+
+  function isProviderCollapsed(providerId) {
+    return Model.isCollapsed(root.collapsedProviders, providerId);
+  }
+
+  function toggleProviderCollapsed(providerId) {
+    root.collapsedProviders = Model.toggleCollapsed(root.collapsedProviders, providerId);
+    root.saveCollapseState();
+  }
+
+  // Apply the collapse defaults for the current report (used when the
+  // first fetch lands before the state file has been read, or when the
+  // report gains a provider the state file never mentioned).
+  function applyCollapseDefaults() {
+    if (!root.report || !root.report.providers)
+      return;
+    if (root.collapseStateLoaded)
+      return;
+    root.collapsedProviders = Model.defaultCollapsedProviders(root.report.providers);
   }
 
   // Re-derive the bar display from the current report + settings. Called
@@ -90,7 +174,9 @@ Item {
   function deriveBar() {
     root.primaryProvider = Model.pickPrimaryProvider(root.report, root.provider);
     root.barLimit = root.primaryProvider ? Model.pickBarLimit(root.primaryProvider, root.barWindow) : null;
-    root.barText = root.barLimit ? Model.formatBarValue(root.barLimit, root.showAs) : "";
+    // showBarValue off: no number in the bar; the BarWidget shows just
+    // the provider short code instead.
+    root.barText = (root.showBarValue && root.barLimit) ? Model.formatBarValue(root.barLimit, root.showAs) : "";
     root.barTone = root.barLimit ? Model.limitTone(root.barLimit) : "ok";
     root.barShort = root.primaryProvider ? Model.providerShort(root.primaryProvider.id) : "";
   }
@@ -137,6 +223,7 @@ Item {
     root.error = "";
     root.installed = true;
     root.lastGoodAt = new Date();
+    root.applyCollapseDefaults();
     root.deriveBar();
   }
 
@@ -217,8 +304,36 @@ Item {
     }
   }
 
+  // Collapse-state file I/O. The read/write helpers are invoked via
+  // bash (they are mode 100644 in git, so a direct exec would fail —
+  // the same lesson as OmoPomodorachy's read-config/write-config).
+  Process {
+    id: collapseStateProc
+    property string collected: ""
+    stdout: SplitParser {
+      onRead: function (data) {
+        collapseStateProc.collected += String(data + "\n");
+      }
+    }
+    onExited: function (exitCode) {
+      var out = String(collapseStateProc.collected);
+      collapseStateProc.collected = "";
+      root.applyCollapseState(exitCode === 0, out);
+    }
+  }
+
+  Process {
+    id: collapseStateWriteProc
+    stderr: SplitParser {
+      onRead: function (data) {
+        console.warn("omp-usage: collapse state write failed: " + String(data));
+      }
+    }
+  }
+
   Component.onCompleted: {
     OmpShared.ServiceBridge.service = root;
+    root.loadCollapseState();
     root.refresh();
   }
   Component.onDestruction: {

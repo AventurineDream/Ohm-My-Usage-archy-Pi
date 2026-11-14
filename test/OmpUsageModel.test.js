@@ -120,5 +120,28 @@ eq(M.providerShort("anthropic"), "cld", "short: anthropic -> cld");
 eq(M.providerShort("openai-codex"), "codex", "short: codex");
 eq(M.providerShort("unknown-provider"), "unkn", "short: unknown falls back to 4 chars");
 
+// Collapse helpers (Phase 1).
+var three = [{ id: "anthropic" }, { id: "openai-codex" }, { id: "devin" }];
+var dflt = M.defaultCollapsedProviders(three);
+eq(JSON.stringify(dflt), JSON.stringify({ devin: true }), "collapse: default collapses only the 3rd provider");
+eq(JSON.stringify(M.defaultCollapsedProviders([{ id: "a" }])), "{}", "collapse: 1 provider -> none collapsed");
+eq(JSON.stringify(M.defaultCollapsedProviders([{ id: "a" }, { id: "b" }])), "{}", "collapse: 2 providers -> none collapsed");
+eq(JSON.stringify(M.defaultCollapsedProviders(null)), "{}", "collapse: null providers -> {}");
+eq(M.isCollapsed(dflt, "devin"), true, "collapse: devin is collapsed");
+eq(M.isCollapsed(dflt, "anthropic"), false, "collapse: anthropic is expanded");
+eq(M.isCollapsed(null, "devin"), false, "collapse: null set -> expanded");
+var toggled = M.toggleCollapsed(dflt, "devin");
+eq(JSON.stringify(toggled), "{}", "collapse: toggling devin expands it");
+eq(JSON.stringify(dflt), JSON.stringify({ devin: true }), "collapse: toggle does not mutate the input");
+eq(JSON.stringify(M.toggleCollapsed(toggled, "anthropic")), JSON.stringify({ anthropic: true }), "collapse: toggling anthropic collapses it");
+eq(JSON.stringify(M.parseCollapseState('{"devin":true,"anthropic":true}')), JSON.stringify({ devin: true, anthropic: true }), "collapse: parse valid state");
+eq(JSON.stringify(M.parseCollapseState("")), "{}", "collapse: parse empty -> {}");
+eq(JSON.stringify(M.parseCollapseState("not json")), "{}", "collapse: parse bad JSON -> {}");
+eq(JSON.stringify(M.parseCollapseState("[1,2]")), "{}", "collapse: parse array -> {}");
+eq(JSON.stringify(M.parseCollapseState('{"devin":false,"xai":true}')), JSON.stringify({ xai: true }), "collapse: parse keeps only true values");
+eq(M.collapseStateText({ devin: true, anthropic: false }), '{"devin":true}', "collapse: serialize keeps only true values");
+eq(M.collapseStateText({}), "{}", "collapse: serialize empty -> {}");
+eq(M.collapseStateText(null), "{}", "collapse: serialize null -> {}");
+
 console.log("OmpUsageModel tests: " + passed + " passed, " + failed + " failed");
 process.exit(failed === 0 ? 0 : 1);
