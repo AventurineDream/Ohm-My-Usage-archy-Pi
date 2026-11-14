@@ -283,16 +283,119 @@ function parseCollapseState(jsonText) {
     return collapsed;
 }
 
-// Serialize the collapse state for the state file. Keeps both true and
-// false entries: an explicit false is what makes an expanded provider
-// stay expanded across reconciles.
-function collapseStateText(collapsed) {
-    if (!collapsed || typeof collapsed !== "object")
-        return "{}";
-    var out = {};
-    for (var k in collapsed) {
-        if (Object.prototype.hasOwnProperty.call(collapsed, k) && typeof collapsed[k] === "boolean")
-            out[k] = collapsed[k];
+// --- Provider display order (drag-to-sort) ---
+// The panel lets the user drag providers into their own order. The order
+// persists in the state file as a list of provider ids (see
+// parseProviderState / providerStateText). A stored order wins; a
+// provider not in it (a new provider, or one the file never saw) is
+// appended in fetch order; an id in the file that no longer exists is
+// dropped.
+
+// Reorder a provider array per a stored id list. Returns a NEW array:
+// stored ids first (in stored order, only those present in the array),
+// then any provider not in the list, in their original (fetch) order.
+// Neither input is mutated.
+function applyProviderOrder(providers, order) {
+    if (!Array.isArray(providers))
+        return [];
+    var byId = {};
+    providers.forEach(function (p) {
+        if (p && typeof p.id === "string" && p.id !== "" && !Object.prototype.hasOwnProperty.call(byId, p.id))
+            byId[p.id] = p;
+    });
+    var out = [];
+    if (Array.isArray(order)) {
+        order.forEach(function (id) {
+            if (typeof id === "string" && Object.prototype.hasOwnProperty.call(byId, id)) {
+                out.push(byId[id]);
+                delete byId[id];
+            }
+        });
+    }
+    providers.forEach(function (p) {
+        if (p && typeof p.id === "string" && Object.prototype.hasOwnProperty.call(byId, p.id))
+            out.push(p);
+    });
+    return out;
+}
+
+// Move the item at index `from` to index `to` in an order list. Returns
+// a NEW array of ids. Indices are clamped to the list bounds; an
+// out-of-range `from` (or a non-numeric index) returns a copy of the
+// input unchanged. Only string ids are kept. The input is not mutated.
+function moveProviderOrder(order, from, to) {
+    var list = [];
+    if (Array.isArray(order)) {
+        order.forEach(function (id) {
+            if (typeof id === "string" && id !== "")
+                list.push(id);
+        });
+    }
+    if (typeof from !== "number" || typeof to !== "number" || from < 0 || from >= list.length)
+        return list;
+    var item = list.splice(from, 1)[0];
+    var idx = Math.max(0, Math.min(to, list.length));
+    list.splice(idx, 0, item);
+    return list;
+}
+
+// Parse the persisted provider-state file. The file is a versioned
+// object: { version: 2, collapsed: { id: bool }, order: [id, ...] }.
+// A v1 file is a flat id -> boolean collapse map; it migrates to
+// { collapsed: <flat>, order: [] }. Returns { collapsed, order } — a
+// fresh object every time — for missing, malformed, or wrongly-shaped
+// content. A bad state file must never break the panel, it just resets
+// to the defaults.
+function parseProviderState(jsonText) {
+    if (typeof jsonText !== "string" || jsonText.trim() === "")
+        return { collapsed: {}, order: [] };
+    var data;
+    try {
+        data = JSON.parse(jsonText);
+    } catch (e) {
+        return { collapsed: {}, order: [] };
+    }
+    if (!data || typeof data !== "object" || Array.isArray(data))
+        return { collapsed: {}, order: [] };
+    if (data.version === 2) {
+        var collapsed = {};
+        var raw = data.collapsed;
+        if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+            for (var k in raw) {
+                if (Object.prototype.hasOwnProperty.call(raw, k) && typeof raw[k] === "boolean")
+                    collapsed[k] = raw[k];
+            }
+        }
+        var order = [];
+        if (Array.isArray(data.order)) {
+            data.order.forEach(function (id) {
+                if (typeof id === "string" && id !== "")
+                    order.push(id);
+            });
+        }
+        return { collapsed: collapsed, order: order };
+    }
+    // v1: flat id -> boolean map.
+    return { collapsed: parseCollapseState(jsonText), order: [] };
+}
+
+// Serialize the provider state for the state file: a versioned object
+// { version: 2, collapsed: {...}, order: [...] }. Keeps both true and
+// false collapse entries: an explicit false is what makes an expanded
+// provider stay expanded across reconciles.
+function providerStateText(collapsed, order) {
+    var out = { version: 2, collapsed: {}, order: [] };
+    if (collapsed && typeof collapsed === "object") {
+        for (var k in collapsed) {
+            if (Object.prototype.hasOwnProperty.call(collapsed, k) && typeof collapsed[k] === "boolean")
+                out.collapsed[k] = collapsed[k];
+        }
+    }
+    if (Array.isArray(order)) {
+        order.forEach(function (id) {
+            if (typeof id === "string" && id !== "")
+                out.order.push(id);
+        });
     }
     return JSON.stringify(out);
 }
@@ -314,6 +417,9 @@ if (typeof module !== "undefined" && module.exports) {
         toggleCollapsed: toggleCollapsed,
         mergeCollapseState: mergeCollapseState,
         parseCollapseState: parseCollapseState,
-        collapseStateText: collapseStateText
+        applyProviderOrder: applyProviderOrder,
+        moveProviderOrder: moveProviderOrder,
+        parseProviderState: parseProviderState,
+        providerStateText: providerStateText
     };
 }

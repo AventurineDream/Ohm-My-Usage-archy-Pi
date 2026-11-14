@@ -396,117 +396,223 @@ Panel {
 
           // One section per provider. The first two start expanded, the
           // rest collapsed; the state persists in the state file, so it
-          // survives closing and reopening the panel.
-          Repeater {
+          // survives closing and reopening the panel. Drag a provider
+          // by its grip to reorder the list; the order persists too.
+          // A ListView (not a Repeater) so the sections can be dragged:
+          // it is non-interactive with its height bound to its content,
+          // so the outer Flickable stays the scroller and keeps the
+          // WheelHandler workaround.
+          ListView {
+            id: providerList
+            width: parent.width
+            height: contentHeight
+            interactive: false
+            spacing: Style.space(16)
             model: root.usageService && root.usageService.report ? root.usageService.report.providers : []
 
-            Column {
-              id: providerSection
-              required property var modelData
-              readonly property bool collapsed: root.usageService ? root.usageService.isProviderCollapsed(modelData.id) : false
-              // Summary: highest used% across this provider's limits.
-              readonly property int peakPct: {
-                var best = 0;
-                for (var i = 0; i < modelData.limits.length; i++) {
-                  if (modelData.limits[i].usedPct > best)
-                    best = modelData.limits[i].usedPct;
-                }
-                return best;
-              }
-              width: parent.width
-              spacing: Style.space(8)
+            // Drag state, shared by the delegates. dragItem is the
+            // delegate being dragged; dragLayoutY is its layout
+            // position before the drag (its y is the dragged position
+            // while dragging).
+            property Item dragItem: null
+            property real dragLayoutY: 0
 
-              MouseArea {
-                width: parent.width
-                height: providerHeader.implicitHeight
-                onClicked: {
-                  if (root.usageService)
-                    root.usageService.toggleProviderCollapsed(modelData.id);
-                }
-                RowLayout {
-                  id: providerHeader
-                  width: parent.width
-                  spacing: Style.space(6)
-                  Text {
-                    text: providerSection.collapsed ? ">" : "v"
-                    color: root.foreground
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.body
-                  }
-                  Text {
-                    text: modelData.label
-                    color: root.foreground
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.body
-                    font.bold: true
-                    Layout.fillWidth: true
-                    elide: Text.ElideRight
-                  }
-                  Text {
-                    text: providerSection.peakPct + "%"
-                    color: root.toneColor(Model.limitTone({ usedPct: providerSection.peakPct, status: providerSection.peakPct >= 100 ? "exhausted" : "ok" }))
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.body
-                    font.bold: providerSection.peakPct >= 90
-                  }
+            // Return the delegate index whose layout span contains the
+            // given y (in content coordinates). Used on drop to find
+            // where the dragged provider lands. The dragged delegate's
+            // own y is its dragged position, so its stored layoutY is
+            // used instead; the other delegates have not moved.
+            function dropIndex(centerY) {
+              var spans = [];
+              var kids = providerList.contentItem.children;
+              for (var i = 0; i < kids.length; i++) {
+                var c = kids[i];
+                if (c && typeof c.index === "number" && typeof c.height === "number") {
+                  var y = (c === providerList.dragItem) ? providerList.dragLayoutY : c.y;
+                  spans.push({ index: c.index, y: y, h: c.height });
                 }
               }
+              spans.sort(function (a, b) { return a.index - b.index; });
+              for (var j = 0; j < spans.length; j++) {
+                if (centerY < spans[j].y + spans[j].h)
+                  return spans[j].index;
+              }
+              return spans.length > 0 ? spans[spans.length - 1].index : 0;
+            }
+
+            delegate: Item {
+              id: delegateRoot
+              required property var modelData
+              required property int index
+              width: providerList.width
+              height: providerSection.implicitHeight
+              property bool dragging: false
+              property real layoutY: 0
+              z: dragging ? 10 : 0
 
               Column {
-                visible: !providerSection.collapsed
+                id: providerSection
+                // NOTE: no `required property var modelData` here. This
+                // Column is a child of the ListView delegate, not a
+                // delegate itself — it reads the delegate's modelData
+                // from scope. Declaring it required breaks delegate
+                // creation (nothing assigns it), which renders the
+                // whole list empty.
+                readonly property bool collapsed: root.usageService ? root.usageService.isProviderCollapsed(modelData.id) : false
+                // Summary: highest used% across this provider's limits.
+                readonly property int peakPct: {
+                  var best = 0;
+                  for (var i = 0; i < modelData.limits.length; i++) {
+                    if (modelData.limits[i].usedPct > best)
+                      best = modelData.limits[i].usedPct;
+                  }
+                  return best;
+                }
                 width: parent.width
                 spacing: Style.space(8)
+                opacity: delegateRoot.dragging ? 0.85 : 1
 
-                Repeater {
-                  model: modelData.limits
-
-                  Column {
-                    required property var modelData
+                MouseArea {
+                  width: parent.width
+                  height: providerHeader.implicitHeight
+                  onClicked: {
+                    if (root.usageService)
+                      root.usageService.toggleProviderCollapsed(modelData.id);
+                  }
+                  RowLayout {
+                    id: providerHeader
                     width: parent.width
-                    spacing: Style.space(4)
-
-                    RowLayout {
-                      width: parent.width
-                      spacing: Style.space(8)
-
-                      Text {
-                        text: modelData.label
-                        color: root.foreground
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.body
-                        Layout.fillWidth: true
-                        elide: Text.ElideRight
-                      }
-
-                      Text {
-                        text: modelData.usedPct + "% used"
-                        color: root.toneColor(Model.limitTone(modelData))
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.body
-                        font.bold: modelData.usedPct >= 90
-                      }
-
-                      Text {
-                        visible: modelData.resetsAt !== null
-                        text: "resets in " + Model.formatResetIn(modelData.resetsAt, new Date().getTime())
-                        color: Qt.darker(root.foreground, 1.4)
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.body
+                    spacing: Style.space(6)
+                    // Drag grip. The grip — not the whole header — is the
+                    // drag target, so click-to-collapse keeps working and
+                    // the gesture is discoverable. The grip MouseArea
+                    // accepts the press, so a press on it never reaches
+                    // the header MouseArea above.
+                    Text {
+                      text: "⠿"
+                      color: Qt.darker(root.foreground, 1.4)
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.body
+                      MouseArea {
+                        id: gripArea
+                        anchors.fill: parent
+                        anchors.margins: -Style.space(4)
+                        cursorShape: Qt.OpenHandCursor
+                        drag.target: delegateRoot
+                        drag.axis: Drag.YAxis
+                        drag.minimumY: 0
+                        drag.maximumY: Math.max(0, providerList.contentHeight - delegateRoot.height)
+                        onPressed: function (mouse) {
+                          delegateRoot.layoutY = delegateRoot.y;
+                          delegateRoot.dragging = true;
+                          providerList.dragItem = delegateRoot;
+                          providerList.dragLayoutY = delegateRoot.y;
+                          // A drag is not a scroll: stop the Flickable
+                          // from treating it as one.
+                          scroller.interactive = false;
+                          gripArea.cursorShape = Qt.ClosedHandCursor;
+                        }
+                        onReleased: function (mouse) {
+                          var from = delegateRoot.index;
+                          var centerY = delegateRoot.y + delegateRoot.height / 2;
+                          var target = providerList.dropIndex(centerY);
+                          delegateRoot.dragging = false;
+                          providerList.dragItem = null;
+                          scroller.interactive = true;
+                          gripArea.cursorShape = Qt.OpenHandCursor;
+                          if (target !== from && root.usageService) {
+                            root.usageService.moveProvider(from, target);
+                            // The model change recreates the delegates;
+                            // no y reset needed.
+                          } else {
+                            // Dropped on itself: snap back to the layout
+                            // position.
+                            delegateRoot.y = delegateRoot.layoutY;
+                          }
+                        }
                       }
                     }
+                    Text {
+                      text: providerSection.collapsed ? ">" : "v"
+                      color: root.foreground
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.body
+                    }
+                    Text {
+                      text: modelData.label
+                      color: root.foreground
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.body
+                      font.bold: true
+                      Layout.fillWidth: true
+                      elide: Text.ElideRight
+                    }
+                    Text {
+                      text: providerSection.peakPct + "%"
+                      color: root.toneColor(Model.limitTone({ usedPct: providerSection.peakPct, status: providerSection.peakPct >= 100 ? "exhausted" : "ok" }))
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.body
+                      font.bold: providerSection.peakPct >= 90
+                    }
+                  }
+                }
 
-                    Rectangle {
-                      visible: root.settingValue("showPanelBars", true)
+                Column {
+                  visible: !providerSection.collapsed
+                  width: parent.width
+                  spacing: Style.space(8)
+
+                  Repeater {
+                    model: modelData.limits
+
+                    Column {
+                      required property var modelData
                       width: parent.width
-                      height: Style.space(6)
-                      radius: height / 2
-                      color: Qt.darker(root.foreground, 2.2)
+                      spacing: Style.space(4)
+
+                      RowLayout {
+                        width: parent.width
+                        spacing: Style.space(8)
+
+                        Text {
+                          text: modelData.label
+                          color: root.foreground
+                          font.family: root.fontFamily
+                          font.pixelSize: Style.font.body
+                          Layout.fillWidth: true
+                          elide: Text.ElideRight
+                        }
+
+                        Text {
+                          text: modelData.usedPct + "% used"
+                          color: root.toneColor(Model.limitTone(modelData))
+                          font.family: root.fontFamily
+                          font.pixelSize: Style.font.body
+                          font.bold: modelData.usedPct >= 90
+                        }
+
+                        Text {
+                          visible: modelData.resetsAt !== null
+                          text: "resets in " + Model.formatResetIn(modelData.resetsAt, new Date().getTime())
+                          color: Qt.darker(root.foreground, 1.4)
+                          font.family: root.fontFamily
+                          font.pixelSize: Style.font.body
+                        }
+                      }
 
                       Rectangle {
-                        width: parent.width * Math.min(1, modelData.usedPct / 100)
-                        height: parent.height
+                        visible: root.settingValue("showPanelBars", true)
+                        width: parent.width
+                        height: Style.space(6)
                         radius: height / 2
-                        color: root.toneColor(Model.limitTone(modelData))
+                        color: Qt.darker(root.foreground, 2.2)
+
+                        Rectangle {
+                          width: parent.width * Math.min(1, modelData.usedPct / 100)
+                          height: parent.height
+                          radius: height / 2
+                          color: root.toneColor(Model.limitTone(modelData))
+                        }
                       }
                     }
                   }
@@ -518,7 +624,7 @@ Panel {
           Text {
             visible: root.usageService && root.usageService.report && root.usageService.report.providers.length > 0
             width: parent.width
-            text: "From `omp usage`. Right-click the bar icon to refresh."
+            text: "From `omp usage`. Drag a provider by its ⠿ grip to reorder it. Right-click the bar icon to refresh."
             color: Qt.darker(root.foreground, 1.4)
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
