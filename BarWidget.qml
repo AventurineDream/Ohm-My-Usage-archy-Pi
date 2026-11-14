@@ -36,16 +36,17 @@ BarWidget {
   }
 
   // Tone color: the bar text is always the theme accent so the usage
-  // reads as a themed readout, not plain bar text; only an exhausted
-  // window goes red (urgent) so a blown window is visible at a glance.
-  // (Color has urgent/accent; there is no alert/warning role.)
+  // reads as a themed readout, not plain bar text. An exhausted window
+  // goes full red (urgent); a nearly-exhausted one (>= 90%) gets a dim
+  // red so it stands apart from both the accent and the full red.
+  // (Color has no warning role, so "high" is urgent at 60% opacity.)
   readonly property color barToneColor: {
     if (!root.usageService)
       return button.foreground;
     if (root.usageService.barTone === "critical")
       return Color.urgent;
     if (root.usageService.barTone === "high")
-      return Color.accent;
+      return Qt.rgba(Color.urgent.r, Color.urgent.g, Color.urgent.b, 0.6);
     return Color.accent;
   }
 

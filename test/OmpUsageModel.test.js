@@ -93,6 +93,11 @@ eq(M.limitTone(anth.limits[1]), "ok", "tone: 34% -> ok");
 eq(M.limitTone({ usedPct: 95, status: "ok" }), "high", "tone: 95% -> high");
 eq(M.limitTone({ usedPct: 100, status: "ok" }), "critical", "tone: 100% -> critical");
 eq(M.limitTone(null), "ok", "tone: null -> ok");
+eq(M.limitTone({ usedPct: 90, status: "ok" }), "high", "tone: 90% boundary -> high");
+eq(M.limitTone({ usedPct: 89, status: "ok" }), "ok", "tone: 89% -> ok");
+eq(M.limitTone({ usedPct: 99, status: "ok" }), "high", "tone: 99% -> high");
+eq(M.limitTone({ usedPct: 85, status: "exhausted" }), "critical", "tone: exhausted at 85% -> critical");
+eq(M.limitTone(undefined), "ok", "tone: undefined -> ok");
 
 // pollIntervalMs — base 300s (5 min), panel open, no failures.
 // Closed panel halves the cadence; failures double it, capped at 30 min.
