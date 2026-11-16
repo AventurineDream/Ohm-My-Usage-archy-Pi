@@ -545,12 +545,20 @@ Panel {
                             root.usageService.dragging = true;
                         }
                         onReleased: function (mouse) {
+                          // Capture the Service up front: moveProvider()
+                          // below changes the model, which destroys this
+                          // delegate mid-handler — a later `root` lookup
+                          // then fails (ReferenceError) and
+                          // applyPendingReport() never runs. The captured
+                          // local is a plain JS variable in this scope,
+                          // so it survives the destruction.
+                          var svc = root.usageService;
                           var from = delegateRoot.index;
                           var centerY = delegateRoot.y + delegateRoot.height / 2;
                           var target = providerList.dropIndex(centerY);
                           delegateRoot.endDrag();
-                          if (target !== from && root.usageService) {
-                            root.usageService.moveProvider(from, target);
+                          if (target !== from && svc) {
+                            svc.moveProvider(from, target);
                             // The model change recreates the delegates;
                             // no y reset needed.
                           } else {
@@ -560,18 +568,24 @@ Panel {
                           }
                           // Apply any report stashed by a poll that
                           // landed mid-drag.
-                          if (root.usageService)
-                            root.usageService.applyPendingReport();
+                          if (svc)
+                            svc.applyPendingReport();
                         }
                         onCanceled: function () {
                           // The grab was stolen (another item, a popup,
                           // the window losing focus): end the drag and
                           // snap back. Without this, scroller.interactive
                           // would stay false until the shell restarts.
+                          // Capture the Service up front, as in
+                          // onReleased: the delegate can be destroyed
+                          // mid-handler, so a later `root` lookup is not
+                          // safe. The captured local survives because it
+                          // is a plain JS variable in this scope.
+                          var svc = root.usageService;
                           delegateRoot.endDrag();
                           delegateRoot.y = delegateRoot.layoutY;
-                          if (root.usageService)
-                            root.usageService.applyPendingReport();
+                          if (svc)
+                            svc.applyPendingReport();
                         }
                       }
                     }
