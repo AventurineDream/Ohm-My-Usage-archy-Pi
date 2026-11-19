@@ -135,7 +135,7 @@ BarWidget {
     foreground: root.barToneColor
     labelVisible: true
     hasVisualContent: text !== ""
-    tooltipText: root.usageService && root.usageService.installed ? (root.usageService.stale ? "OMP usage (stale — last fetch failed)" : "OMP usage") : "OMP usage — waiting for the first fetch"
+    tooltipText: root.usageService && root.usageService.installed ? (root.usageService.stale ? "OMP usage (stale — last fetch failed)" : "OMP usage") : root.usageService && root.usageService.error !== "" ? "OMP usage — first fetch failed (retrying)" : "OMP usage — waiting for the first fetch"
     onPressed: function (buttonCode) {
       if (buttonCode === Qt.LeftButton)
         root.toggle();

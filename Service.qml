@@ -31,6 +31,11 @@ Item {
   // (Model.defaultCollapsedProviders) and the order is the fetch order.
   property var collapsedProviders: ({})
   property bool providerStateLoaded: false
+  // True when the initial read of the state file failed (unreadable, not a
+  // regular file, or over maxStateBytes). Saves stay blocked until restart;
+  // the panel shows a warning so this is not silent. Never holds file
+  // contents or paths.
+  property bool providerStateReadFailed: false
   // The raw sets read from the state file (before merging with the
   // defaults). Kept separate so the merge can run whenever the report
   // arrives, regardless of whether the state file or the first fetch
@@ -134,8 +139,20 @@ Item {
   }
 
   function applyProviderState(ok, output) {
+    if (!ok) {
+      // A failed read is not an empty state file. Treating it as one lets
+      // the next drag or collapse write an empty state over the saved order,
+      // so saves stay blocked (providerStateLoaded stays false) and the
+      // defaults apply for display only.
+      console.warn("omp-usage: provider state read failed; saves disabled until restart");
+      root.providerStateReadFailed = true;
+      root.reconcileCollapseState();
+      root.applyProviderOrder();
+      return;
+    }
     root.providerStateLoaded = true;
-    var state = Model.parseProviderState(ok ? output : "");
+    root.providerStateReadFailed = false;
+    var state = Model.parseProviderState(output);
     root.persistedCollapsed = state.collapsed;
     root.persistedOrder = state.order;
     root.reconcileCollapseState();
