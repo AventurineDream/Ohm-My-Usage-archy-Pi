@@ -52,6 +52,19 @@ eq(report.providers[0].limits[0].status, "exhausted", "parse: status kept");
 eq(report.providers[0].limits[0].resetsAt, 1794546000193, "parse: resetsAt kept");
 eq(report.providers[1].label, "OpenAI Codex", "parse: codex label");
 eq(report.providers[2].label, "Devin", "parse: devin label");
+// Regression: a missing remainingFraction must not render "NaN% left", and
+// an overage must clamp "left" at 0% instead of going negative.
+var noRem = M.parseUsageReport(JSON.stringify({ reports: [{ provider: "anthropic", limits: [
+    { id: "anthropic:5h", window: { id: "5h" }, amount: { usedFraction: 0.34 }, status: "ok" }
+] }] }));
+eq(noRem.providers[0].limits[0].remainingPct, 66, "remaining: derived from usedFraction when remainingFraction is missing");
+eq(M.formatBarValue(noRem.providers[0].limits[0], "left"), "66% left", "remaining: no NaN in left text");
+var over = M.parseUsageReport(JSON.stringify({ reports: [{ provider: "anthropic", limits: [
+    { id: "anthropic:5h", window: { id: "5h" }, amount: { usedFraction: 1.05, remainingFraction: -0.05 }, status: "exhausted" }
+] }] }));
+eq(over.providers[0].limits[0].remainingPct, 0, "remaining: overage clamps to 0");
+eq(M.formatBarValue(over.providers[0].limits[0], "left"), "0% left", "remaining: overage left text is 0%");
+eq(over.providers[0].limits[0].usedPct, 105, "remaining: overage used stays 105%");
 
 eq(M.parseUsageReport("not json"), null, "parse: bad JSON -> null");
 eq(M.parseUsageReport("{}"), null, "parse: no reports -> null");

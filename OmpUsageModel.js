@@ -38,6 +38,17 @@ function providerShort(providerId) {
     return String(providerId).slice(0, 4);
 }
 
+// Remaining percent for the "left" bar text. Uses remainingFraction when it
+// is a finite number, else derives it from usedFraction: without this a
+// missing field renders as "NaN% left". Clamped to 0..100, so an overage
+// (usedFraction > 1) reads "0% left", never a negative percentage.
+function remainingPercent(amount) {
+    var frac = typeof amount.remainingFraction === "number" && isFinite(amount.remainingFraction)
+        ? amount.remainingFraction
+        : 1 - amount.usedFraction;
+    return Math.max(0, Math.min(100, Math.round(frac * 100)));
+}
+
 // Normalize one limit entry into the shape the UI consumes. Returns null
 // when the entry is unusable (missing amount/window), so callers skip it.
 function normalizeLimit(raw) {
@@ -50,7 +61,7 @@ function normalizeLimit(raw) {
         windowId: String(win.id || ""),
         windowLabel: String(win.label || win.id || ""),
         usedPct: Math.round(raw.amount.usedFraction * 100),
-        remainingPct: Math.round(raw.amount.remainingFraction * 100),
+        remainingPct: remainingPercent(raw.amount),
         status: String(raw.status || "ok"),
         resetsAt: typeof win.resetsAt === "number" ? win.resetsAt : null
     };

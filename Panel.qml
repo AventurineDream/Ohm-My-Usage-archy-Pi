@@ -23,6 +23,18 @@ Panel {
   // Settings section expanded state (panel-local, not persisted).
   property bool settingsExpanded: false
 
+  // Clock for the "resets in" countdowns. A binding that calls new Date()
+  // has no QML dependency, so it froze at delegate creation; this property
+  // is refreshed by the timer while the panel is open (and immediately at open).
+  property real nowMs: new Date().getTime()
+  Timer {
+    interval: 15000
+    repeat: true
+    running: root.opened
+    triggeredOnStart: true
+    onTriggered: root.nowMs = new Date().getTime()
+  }
+
   // Pending settings write: the last settings object handed to
   // updateEntryInline that the shell has not echoed back yet. A second
   // toggle before the echo lands merges into this object instead of
@@ -190,15 +202,27 @@ Panel {
             }
           }
 
+          // Shown when the saved panel layout could not be read at startup.
+          // Changes are not saved until the shell restarts, so say so.
+          Text {
+            visible: root.usageService && root.usageService.providerStateReadFailed
+            width: parent.width
+            text: "Saved panel layout is unavailable. Collapse and order changes can't be saved."
+            color: Color.accent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            wrapMode: Text.WordWrap
+          }
+
           // Error / empty state.
           Column {
-            visible: !root.usageService || !root.usageService.report
+            visible: !root.usageService || !root.usageService.report || root.usageService.report.providers.length === 0
             width: parent.width
             spacing: Style.space(6)
 
             Text {
               width: parent.width
-              text: root.usageService && root.usageService.error !== "" ? root.usageService.error : "Waiting for the first OMP usage fetch…"
+              text: root.usageService && root.usageService.report ? "omp usage reported no providers." : root.usageService && root.usageService.error !== "" ? root.usageService.error : "Waiting for the first OMP usage fetch…"
               color: Qt.darker(root.foreground, 1.4)
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
@@ -650,7 +674,7 @@ Panel {
 
                         Text {
                           visible: modelData.resetsAt !== null
-                          text: "resets in " + Model.formatResetIn(modelData.resetsAt, new Date().getTime())
+                          text: "resets in " + Model.formatResetIn(modelData.resetsAt, root.nowMs)
                           color: Qt.darker(root.foreground, 1.4)
                           font.family: root.fontFamily
                           font.pixelSize: Style.font.body
